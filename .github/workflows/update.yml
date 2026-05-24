@@ -1,0 +1,40 @@
+name: K-탐욕공포지수 업데이트
+
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'  # 평일 17:00 KST (UTC+9 기준 08:00 UTC)
+  workflow_dispatch:         # 수동 실행 버튼
+
+permissions:
+  contents: write
+
+jobs:
+  update-index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: K-탐욕공포지수 산출
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: python k_fear_greed_index.py
+
+      - name: CSV 커밋 & 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k_fear_greed_result.csv
+          git diff --staged --quiet || git commit -m "데이터 업데이트: $(TZ='Asia/Seoul' date +'%Y-%m-%d')"
+          git push

@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>K-탐욕공포지수</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --extreme-fear: #d32f2f;
+      --fear:         #f57c00;
+      --neutral:      #fbc02d;
+      --greed:        #388e3c;
+      --extreme-greed:#1565c0;
+      --bg:           #0d1117;
+      --surface:      #161b22;
+      --border:       #30363d;
+      --text:         #e6edf3;
+      --muted:        #8b949e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 24px 32px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding-bottom: 20px;
+    }
+    header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.3px; }
+    header .subtitle { font-size: 0.8rem; color: var(--muted); }
+
+    .main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 24px;
+      display: grid;
+      gap: 24px;
+    }
+
+    /* ── 상단: 게이지 + 수치 ── */
+    .top-row {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    /* 게이지 */
+    .gauge-card { text-align: center; }
+    .gauge-wrap { position: relative; width: 260px; margin: 0 auto 12px; }
+    .gauge-wrap canvas { display: block; }
+    .gauge-label {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .gauge-label .score {
+      font-size: 2.6rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .gauge-label .grade {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .gauge-date { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+
+    /* 인자별 바 */
+    .factors-card {}
+    .factors-card h2 {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    .factor-row { margin-bottom: 14px; }
+    .factor-row:last-child { margin-bottom: 0; }
+    .factor-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      margin-bottom: 5px;
+    }
+    .factor-name { color: var(--text); }
+    .factor-val  { font-weight: 700; font-size: 0.85rem; }
+    .bar-track {
+      height: 7px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.6s ease;
+    }
+
+    /* ── 히스토리 차트 ── */
+    .chart-card h2 {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ── 최근 10일 테이블 ── */
+    .table-card h2 {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+    .tbl-scroll { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+    th {
+      padding: 8px 12px;
+      text-align: right;
+      color: var(--muted);
+      font-weight: 500;
+      border-bottom: 1px solid var(--border);
+    }
+    th:first-child { text-align: left; }
+    td {
+      padding: 9px 12px;
+      text-align: right;
+      border-bottom: 1px solid #21262d;
+    }
+    td:first-child { text-align: left; color: var(--muted); font-size: 0.79rem; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1c2128; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    /* ── 색상 유틸 ── */
+    .c-ef  { color: var(--extreme-fear); }
+    .c-f   { color: var(--fear); }
+    .c-n   { color: var(--neutral); }
+    .c-g   { color: var(--greed); }
+    .c-eg  { color: var(--extreme-greed); }
+
+    .bg-ef  { background: rgba(211,47,47,.18);  color: var(--extreme-fear); }
+    .bg-f   { background: rgba(245,124,0,.18);  color: var(--fear); }
+    .bg-n   { background: rgba(251,192,45,.18); color: var(--neutral); }
+    .bg-g   { background: rgba(56,142,60,.18);  color: var(--greed); }
+    .bg-eg  { background: rgba(21,101,192,.18); color: var(--extreme-greed); }
+
+    /* loading */
+    #loading {
+      position: fixed; inset: 0;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 16px;
+      font-size: 0.9rem; color: var(--muted);
+      z-index: 999;
+    }
+    #file-fallback {
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+      text-align: center;
+    }
+    #file-fallback p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+    #file-fallback label {
+      display: inline-block;
+      padding: 10px 22px;
+      background: #21262d;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--text);
+      transition: background 0.2s;
+    }
+    #file-fallback label:hover { background: #30363d; }
+    #file-input { display: none; }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <span id="loading-msg">데이터 불러오는 중…</span>
+  <div id="file-fallback" style="display:none">
+    <p>로컬에서 직접 열었을 때는 CSV 파일을 선택해주세요.<br>
+       <strong style="color:var(--text)">k_fear_greed_result.csv</strong> 파일을 선택하면 됩니다.</p>
+    <label for="file-input">📂 CSV 파일 선택</label>
+    <input type="file" id="file-input" accept=".csv" />
+  </div>
+</div>
+
+<header>
+  <h1>🇰🇷 K-탐욕공포지수</h1>
+  <span class="subtitle">KOSPI 기반 Fear &amp; Greed Index</span>
+</header>
+
+<div class="main">
+
+  <!-- 상단 행 -->
+  <div class="top-row">
+    <!-- 게이지 -->
+    <div class="card gauge-card">
+      <div class="gauge-wrap">
+        <canvas id="gaugeCanvas" width="260" height="150"></canvas>
+        <div class="gauge-label">
+          <div class="score" id="gaugeScore">—</div>
+          <div class="grade" id="gaugeGrade">—</div>
+        </div>
+      </div>
+      <div class="gauge-date" id="gaugeDate">—</div>
+    </div>
+
+    <!-- 인자별 바 -->
+    <div class="card factors-card">
+      <h2>인자별 점수 (최신)</h2>
+      <div id="factorBars"></div>
+    </div>
+  </div>
+
+  <!-- 히스토리 차트 -->
+  <div class="card chart-card">
+    <h2>지수 추이 (최근 60일)</h2>
+    <div class="chart-wrap">
+      <canvas id="historyChart"></canvas>
+    </div>
+  </div>
+
+  <!-- 최근 10일 테이블 -->
+  <div class="card table-card">
+    <h2>최근 10일 인자별 점수</h2>
+    <div class="tbl-scroll">
+      <table id="recentTable">
+        <thead>
+          <tr>
+            <th>날짜</th>
+            <th>모멘텀</th>
+            <th>강도</th>
+            <th>폭</th>
+            <th>신용</th>
+            <th>변동성</th>
+            <th>안전자산</th>
+            <th>K-지수</th>
+            <th>등급</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /.main -->
+
+<script>
+// ──────────────────────────────────────────
+// 유틸
+// ──────────────────────────────────────────
+const GRADE_MAP = {
+  "극단적 공포": { cls: "c-ef", bgCls: "bg-ef", hex: "#d32f2f" },
+  "공포":        { cls: "c-f",  bgCls: "bg-f",  hex: "#f57c00" },
+  "중립":        { cls: "c-n",  bgCls: "bg-n",  hex: "#fbc02d" },
+  "탐욕":        { cls: "c-g",  bgCls: "bg-g",  hex: "#388e3c" },
+  "극단적 탐욕": { cls: "c-eg", bgCls: "bg-eg", hex: "#1565c0" },
+};
+
+function scoreColor(score) {
+  if (score <= 25) return "#d32f2f";
+  if (score <= 45) return "#f57c00";
+  if (score <= 55) return "#fbc02d";
+  if (score <= 75) return "#388e3c";
+  return "#1565c0";
+}
+
+function fmt(val) {
+  return isNaN(val) ? "—" : Number(val).toFixed(1);
+}
+
+// ──────────────────────────────────────────
+// CSV 파싱 (BOM 대응 포함)
+// ──────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.replace(/^﻿/, "").trim().split("\n");
+  const headers = lines[0].split(",").map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const vals = line.split(",").map(v => v.trim());
+    const obj = {};
+    headers.forEach((h, i) => obj[h] = vals[i] ?? "");
+    return obj;
+  });
+}
+
+// ──────────────────────────────────────────
+// 게이지 (반원 도넛)
+// ──────────────────────────────────────────
+function drawGauge(score) {
+  const canvas = document.getElementById("gaugeCanvas");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H - 20;
+  const R = 105, thick = 22;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // 배경 트랙
+  const segments = [
+    { from: Math.PI, to: Math.PI * 1.2, color: "#d32f2f" },
+    { from: Math.PI * 1.2, to: Math.PI * 1.4, color: "#f57c00" },
+    { from: Math.PI * 1.4, to: Math.PI * 1.6, color: "#fbc02d" },
+    { from: Math.PI * 1.6, to: Math.PI * 1.8, color: "#388e3c" },
+    { from: Math.PI * 1.8, to: Math.PI * 2,   color: "#1565c0" },
+  ];
+  segments.forEach(s => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, s.from, s.to);
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = thick;
+    ctx.lineCap = "butt";
+    ctx.globalAlpha = 0.3;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+
+  // 현재 값 포인터 (두꺼운 선 오버레이)
+  const angle = Math.PI + (score / 100) * Math.PI;
+  const span  = Math.PI * 0.04;
+  const aFrom = Math.max(Math.PI, angle - span);
+  const aTo   = Math.min(Math.PI * 2, angle + span);
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, aFrom, aTo);
+  ctx.strokeStyle = scoreColor(score);
+  ctx.lineWidth = thick + 4;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 1;
+  ctx.stroke();
+
+  // 니들 (바늘)
+  const nx = cx + (R) * Math.cos(angle);
+  const ny = cy + (R) * Math.sin(angle);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(nx, ny);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 0.9;
+  ctx.stroke();
+
+  // 중심 점
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.globalAlpha = 1;
+  ctx.fill();
+
+  // 눈금 라벨
+  const ticks = [
+    { val: 0,   label: "0" },
+    { val: 25,  label: "25" },
+    { val: 50,  label: "50" },
+    { val: 75,  label: "75" },
+    { val: 100, label: "100" },
+  ];
+  ctx.font = "10px sans-serif";
+  ctx.fillStyle = "#8b949e";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ticks.forEach(t => {
+    const a = Math.PI + (t.val / 100) * Math.PI;
+    const lx = cx + (R + 18) * Math.cos(a);
+    const ly = cy + (R + 18) * Math.sin(a);
+    ctx.fillText(t.label, lx, ly);
+  });
+}
+
+// ──────────────────────────────────────────
+// 인자별 바
+// ──────────────────────────────────────────
+const FACTOR_LABELS = {
+  "주가_모멘텀":   "주가 모멘텀",
+  "주가_강도":     "주가 강도",
+  "주가_폭":       "주가 폭",
+  "신용스프레드":  "신용스프레드",
+  "시장_변동성":   "시장 변동성",
+  "안전자산_수요": "안전자산 수요",
+};
+
+function renderFactorBars(row) {
+  const container = document.getElementById("factorBars");
+  container.innerHTML = "";
+  Object.keys(FACTOR_LABELS).forEach(key => {
+    const val = parseFloat(row[key]);
+    const color = scoreColor(val);
+    const div = document.createElement("div");
+    div.className = "factor-row";
+    div.innerHTML = `
+      <div class="factor-header">
+        <span class="factor-name">${FACTOR_LABELS[key]}</span>
+        <span class="factor-val" style="color:${color}">${fmt(val)}</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${val}%;background:${color}"></div>
+      </div>`;
+    container.appendChild(div);
+  });
+}
+
+// ──────────────────────────────────────────
+// 히스토리 라인 차트
+// ──────────────────────────────────────────
+let histChart = null;
+function renderHistoryChart(rows) {
+  const labels  = rows.map(r => r["날짜"].slice(0, 10));
+  const scores  = rows.map(r => parseFloat(r["K_탐욕공포지수"]));
+  const colors  = scores.map(scoreColor);
+
+  const ctx = document.getElementById("historyChart").getContext("2d");
+  if (histChart) histChart.destroy();
+
+  // 배경 영역 채우기용 그라디언트
+  const grad = ctx.createLinearGradient(0, 0, 0, 220);
+  grad.addColorStop(0, "rgba(56,142,60,0.25)");
+  grad.addColorStop(1, "rgba(56,142,60,0)");
+
+  histChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        data: scores,
+        borderColor: "#58a6ff",
+        borderWidth: 2,
+        backgroundColor: grad,
+        pointBackgroundColor: colors,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        tension: 0.3,
+        fill: true,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` K-지수: ${ctx.raw.toFixed(1)}`,
+          },
+          backgroundColor: "#21262d",
+          titleColor: "#8b949e",
+          bodyColor: "#e6edf3",
+          borderColor: "#30363d",
+          borderWidth: 1,
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: "#8b949e",
+            maxRotation: 0,
+            maxTicksLimit: 10,
+            font: { size: 10 },
+          },
+          grid: { color: "#21262d" },
+        },
+        y: {
+          min: 0, max: 100,
+          ticks: {
+            color: "#8b949e",
+            font: { size: 10 },
+            callback: v => v,
+          },
+          grid: { color: "#21262d" },
+        },
+      },
+    },
+  });
+
+  // 구간 배경 플러그인 (공포/탐욕 배경)
+  Chart.register({
+    id: "bandsBg",
+    beforeDraw(chart) {
+      const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
+      const bands = [
+        { min: 0,  max: 25,  color: "rgba(211,47,47,0.07)" },
+        { min: 25, max: 45,  color: "rgba(245,124,0,0.07)" },
+        { min: 45, max: 55,  color: "rgba(251,192,45,0.05)" },
+        { min: 55, max: 75,  color: "rgba(56,142,60,0.07)" },
+        { min: 75, max: 100, color: "rgba(21,101,192,0.07)" },
+      ];
+      bands.forEach(b => {
+        const yTop = y.getPixelForValue(b.max);
+        const yBot = y.getPixelForValue(b.min);
+        ctx.fillStyle = b.color;
+        ctx.fillRect(left, yTop, right - left, yBot - yTop);
+      });
+    },
+  });
+}
+
+// ──────────────────────────────────────────
+// 최근 10일 테이블
+// ──────────────────────────────────────────
+function renderTable(rows) {
+  const last10 = rows.slice(-10).reverse();
+  const tbody = document.getElementById("tableBody");
+  tbody.innerHTML = "";
+  last10.forEach(r => {
+    const score = parseFloat(r["K_탐욕공포지수"]);
+    const grade = r["등급"] || "—";
+    const ginfo = GRADE_MAP[grade] || { cls: "", bgCls: "", hex: "#8b949e" };
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r["날짜"].slice(0, 10)}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>
+      <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
+      <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+// ──────────────────────────────────────────
+// 렌더 공통 함수
+// ──────────────────────────────────────────
+function renderAll(text) {
+  const rows = parseCSV(text).filter(r => r["날짜"] && r["K_탐욕공포지수"]);
+  if (rows.length === 0) {
+    document.getElementById("loading-msg").textContent = "⚠️ CSV 데이터가 비어있습니다.";
+    return;
+  }
+
+  const latest = rows[rows.length - 1];
+  const score  = parseFloat(latest["K_탐욕공포지수"]);
+  const grade  = latest["등급"] || "—";
+  const ginfo  = GRADE_MAP[grade] || { cls: "", hex: "#8b949e" };
+
+  drawGauge(score);
+  const scoreEl = document.getElementById("gaugeScore");
+  scoreEl.textContent = score.toFixed(1);
+  scoreEl.style.color = ginfo.hex;
+  document.getElementById("gaugeGrade").textContent = grade;
+  document.getElementById("gaugeDate").textContent =
+    `기준일: ${latest["날짜"].slice(0, 10)}`;
+
+  renderFactorBars(latest);
+  renderHistoryChart(rows.slice(-60));   // 최근 60일만 표시
+  renderTable(rows);
+
+  document.getElementById("loading").style.display = "none";
+}
+
+// ──────────────────────────────────────────
+// 메인: fetch 시도 → 실패 시 파일 선택 fallback
+// ──────────────────────────────────────────
+async function loadData() {
+  // 1) fetch 시도 (서버 환경 / GitHub Pages)
+  try {
+    const res = await fetch("k_fear_greed_result.csv");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    renderAll(text);
+    return;
+  } catch (e) {
+    // file:// 또는 서버 없는 환경 → fallback UI 표시
+    console.warn("fetch 실패, 파일 선택 모드로 전환:", e.message);
+  }
+
+  // 2) fallback: 파일 직접 선택
+  document.getElementById("loading-msg").style.display = "none";
+  document.getElementById("file-fallback").style.display = "flex";
+
+  document.getElementById("file-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => renderAll(ev.target.result);
+    reader.readAsText(file, "UTF-8");
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
