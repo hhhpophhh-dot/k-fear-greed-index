@@ -133,6 +133,16 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 [Sub 7 - GitHub Actions 자동화 및 GitHub Pages 배포]
 - gh CLI로 GitHub 저장소 생성 (k-fear-greed-index, public)
 - ECOS_API_KEY를 GitHub Secret으로 등록, 코드에서 os.environ.get()으로 읽도록 수정
-- .github/workflows/update.yml 생성: 평일 08:00 UTC(17:00 KST) 스케줄 + workflow_dispatch 수동 실행
+- .github/workflows/update.yml 생성: 평일 10:00 UTC(19:00 KST) 스케줄 + workflow_dispatch 수동 실행
+  - 스케줄: 08:00 UTC(17:00 KST) → 10:00 UTC(19:00 KST)로 변경 (pykrx 반영 여유 확보)
 - GitHub Pages 활성화 (main 브랜치 루트) → 배포 URL 확정
 - 초기 배포 시 당일 스케줄 누락(저장소 생성이 08:00 UTC 이후) → workflow_dispatch로 수동 실행
+
+[Sub 8 - UTC/KST 버그 수정 및 UI 개선 (2026-06-01)]
+- 버그: 5/29 이후 데이터 미갱신 원인 파악
+  - Actions 실행 환경(UTC)에서 datetime.now()가 UTC 반환 → UTC 10:00 < 17:00 → 전일(토요일) 기준으로 잘못 판단
+  - 수정: datetime.now(timezone(timedelta(hours=9))) 으로 KST 명시 → 당일 기준 정상 처리
+- UI: 인자별 바 하단에 계산 방식 설명 추가 (역방향 여부 포함)
+- 주가 강도 이상 현상 확인 필요
+  - 6/1 기준 주가_강도 = 0.79 (극단적 저수준), 주가 모멘텀은 100인 상황
+  - 원인 분석 중 → Sub 9에서 처리 예정
