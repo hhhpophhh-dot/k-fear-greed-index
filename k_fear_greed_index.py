@@ -202,7 +202,7 @@ def calc_price_momentum() -> pd.Series:
 # ============================================================
 # 📊 인자 2: 주가 강도 (Price Strength)
 # ============================================================
-def calc_price_strength() -> pd.Series:
+def calc_price_strength():
     """
     KOSPI 전 종목 중 52주 신고가/신저가 종목 수 비율
 
@@ -210,6 +210,8 @@ def calc_price_strength() -> pd.Series:
     비율이 높을수록 탐욕 → invert=False
 
     데이터: pykrx get_market_ohlcv_by_date (개별 종목, KRX 로그인 불필요)
+
+    Returns: (정규화된 시리즈, 신고가_종목수 시리즈, 신저가_종목수 시리즈)
     """
     print("[2/6] 주가 강도 계산 중 (전 종목 수집, 수분 소요)...")
 
@@ -223,20 +225,16 @@ def calc_price_strength() -> pd.Series:
     new_lows  = (close_df <= rolling_low).sum(axis=1)
     total = new_highs + new_lows
 
-    # 최신 기준일 raw 카운트 디버그 출력
     ref_date = close_df.index[-1]
     nh = int(new_highs.loc[ref_date])
     nl = int(new_lows.loc[ref_date])
-    pykrx_last = ref_date.strftime("%Y-%m-%d")
-    print(f"  [진단] pykrx 마지막 날짜: {pykrx_last}")
-    print(f"  [진단] 52주 신고가 종목 수: {nh}개 / 신저가 종목 수: {nl}개 / 합계: {nh+nl}개")
-    if nh + nl > 0:
-        print(f"  [진단] 신고가 비율(raw): {nh/(nh+nl)*100:.1f}%")
+    print(f"  [진단] pykrx 마지막 날짜: {ref_date.strftime('%Y-%m-%d')}")
+    print(f"  [진단] 52주 신고가: {nh}개 / 신저가: {nl}개 / 비율: {nh/(nh+nl)*100:.1f}%" if nh+nl > 0 else f"  [진단] 신고가: {nh}개 / 신저가: {nl}개")
 
     ratio = new_highs / total.replace(0, np.nan)
     ratio = ratio.fillna(0.5)
 
-    return normalize_series(ratio.dropna(), invert=False)
+    return normalize_series(ratio.dropna(), invert=False), new_highs, new_lows
 
 
 # ============================================================
@@ -385,9 +383,10 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     """
     print("\n=== K-탐욕공포지수 산출 시작 (6개 인자) ===\n")
 
+    strength_series, raw_highs, raw_lows = calc_price_strength()
     factors = {
         "주가_모멘텀":   calc_price_momentum(),
-        "주가_강도":     calc_price_strength(),
+        "주가_강도":     strength_series,
         "주가_폭":       calc_market_breadth(),
         "신용스프레드":  calc_credit_spread(),
         "시장_변동성":   calc_market_volatility(),
@@ -395,6 +394,8 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     }
 
     result = pd.DataFrame(factors)
+    result["신고가_종목수"] = raw_highs.reindex(result.index)
+    result["신저가_종목수"] = raw_lows.reindex(result.index)
     result["K_탐욕공포지수"] = result.mean(axis=1, skipna=True)
 
     def label(score):
@@ -458,5 +459,10 @@ if __name__ == "__main__":
     factor_col_list = ["주가_모멘텀", "주가_강도", "주가_폭",
                        "신용스프레드", "시장_변동성", "안전자산_수요"]
     result_df_clean = result_df.dropna(subset=factor_col_list)
+    # 신고가/신저가 정수 변환 (NaN은 유지)
+    for col in ["신고가_종목수", "신저가_종목수"]:
+        result_df_clean[col] = result_df_clean[col].where(
+            result_df_clean[col].isna(), result_df_clean[col].astype(int)
+        )
     result_df_clean.to_csv(output_path, encoding="utf-8-sig")
     print(f"\n결과 저장: {output_path} ({len(result_df_clean)}행)")
