@@ -95,8 +95,14 @@
       letter-spacing: 0.5px;
       margin-bottom: 16px;
     }
-    .factor-row { margin-bottom: 14px; }
+    .factor-row { margin-bottom: 16px; }
     .factor-row:last-child { margin-bottom: 0; }
+    .factor-desc {
+      font-size: 0.73rem;
+      color: var(--muted);
+      margin-top: 5px;
+      line-height: 1.4;
+    }
     .factor-header {
       display: flex;
       justify-content: space-between;
@@ -408,12 +414,12 @@ function drawGauge(score) {
 // 인자별 바
 // ──────────────────────────────────────────
 const FACTOR_LABELS = {
-  "주가_모멘텀":   "주가 모멘텀",
-  "주가_강도":     "주가 강도",
-  "주가_폭":       "주가 폭",
-  "신용스프레드":  "신용스프레드",
-  "시장_변동성":   "시장 변동성",
-  "안전자산_수요": "안전자산 수요",
+  "주가_모멘텀":   { label: "주가 모멘텀",    desc: "KOSPI 종가 vs 125일 이동평균 — 종가가 MA 위에 있을수록 탐욕" },
+  "주가_강도":     { label: "주가 강도",       desc: "52주 신고가 종목 수 / (신고가 + 신저가) — 신고가 비율이 높을수록 탐욕" },
+  "주가_폭":       { label: "주가 폭",         desc: "거래량 기반 McClellan Summation Index — 상승 종목 거래량 비중이 높을수록 탐욕" },
+  "신용스프레드":  { label: "신용스프레드",    desc: "회사채 BBB- 3년물 − 국고채 3년물 — 스프레드가 좁을수록 탐욕 (역방향)" },
+  "시장_변동성":   { label: "시장 변동성",     desc: "KOSPI 20일 실현변동성 (연율화, VKOSPI 대체) — 변동성이 낮을수록 탐욕 (역방향)" },
+  "안전자산_수요": { label: "안전자산 수요",   desc: "KOSPI 20일 수익률 − 국고채 3년물 20일 금리변화 — 주식 우세일수록 탐욕" },
 };
 
 function renderFactorBars(row) {
@@ -422,16 +428,18 @@ function renderFactorBars(row) {
   Object.keys(FACTOR_LABELS).forEach(key => {
     const val = parseFloat(row[key]);
     const color = scoreColor(val);
+    const { label, desc } = FACTOR_LABELS[key];
     const div = document.createElement("div");
     div.className = "factor-row";
     div.innerHTML = `
       <div class="factor-header">
-        <span class="factor-name">${FACTOR_LABELS[key]}</span>
+        <span class="factor-name">${label}</span>
         <span class="factor-val" style="color:${color}">${fmt(val)}</span>
       </div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${val}%;background:${color}"></div>
-      </div>`;
+      </div>
+      <div class="factor-desc">${desc}</div>`;
     container.appendChild(div);
   });
 }
