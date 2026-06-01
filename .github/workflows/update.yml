@@ -37,4 +37,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add k_fear_greed_result.csv
           git diff --staged --quiet || git commit -m "데이터 업데이트: $(TZ='Asia/Seoul' date +'%Y-%m-%d')"
+          git pull --rebase origin main
           git push
