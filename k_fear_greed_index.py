@@ -28,7 +28,7 @@ import pandas as pd
 import numpy as np
 from pykrx import stock
 import FinanceDataReader as fdr
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -40,8 +40,9 @@ ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "X2QOJYHO80BJKPBF1ODJ")
 LOOKBACK_DAYS = 252                        # 정규화 기준 기간 (약 1년 거래일)
 CUTOFF_HOUR   = 17                         # 데이터 기준일 전환 시각 (17:00 이후 = 당일)
 
-# 17:00 이전이면 전날, 이후면 당일을 기준일로 사용
-_now = datetime.now()
+# 17:00 이전이면 전날, 이후면 당일을 기준일로 사용 (KST 기준)
+_KST = timezone(timedelta(hours=9))
+_now = datetime.now(_KST)
 if _now.hour < CUTOFF_HOUR:
     _base = _now - timedelta(days=1)
 else:
