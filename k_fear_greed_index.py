@@ -223,6 +223,16 @@ def calc_price_strength() -> pd.Series:
     new_lows  = (close_df <= rolling_low).sum(axis=1)
     total = new_highs + new_lows
 
+    # 최신 기준일 raw 카운트 디버그 출력
+    ref_date = close_df.index[-1]
+    nh = int(new_highs.loc[ref_date])
+    nl = int(new_lows.loc[ref_date])
+    pykrx_last = ref_date.strftime("%Y-%m-%d")
+    print(f"  [진단] pykrx 마지막 날짜: {pykrx_last}")
+    print(f"  [진단] 52주 신고가 종목 수: {nh}개 / 신저가 종목 수: {nl}개 / 합계: {nh+nl}개")
+    if nh + nl > 0:
+        print(f"  [진단] 신고가 비율(raw): {nh/(nh+nl)*100:.1f}%")
+
     ratio = new_highs / total.replace(0, np.nan)
     ratio = ratio.fillna(0.5)
 
