@@ -283,6 +283,10 @@ def calc_market_breadth() -> pd.Series:
 # ============================================================
 # 📊 인자 4: 풋/콜 비율 (Put/Call Ratio)
 # ============================================================
+PCR_CACHE_PATH = "pcr_raw_data.csv"   # 원시 P/C 비율 캐시 파일
+
+
+# ============================================================
 def calc_put_call_ratio() -> pd.Series:
     """
     KOSPI200 옵션 풋/콜 비율
@@ -293,9 +297,9 @@ def calc_put_call_ratio() -> pd.Series:
     데이터: KRX Open API (openapi.krx.co.kr)
     인증: AUTH_KEY 헤더 — data.krx.co.kr 세션 쿠키와 무관한 별도 시스템
     환경변수: KRX_AUTH_KEY (GitHub Secret)
-    """
-    print("[4/7] 풋/콜 비율 계산 중 (KRX Open API, 4 병렬, 약 15분 소요)...")
 
+    캐시: pcr_raw_data.csv — 최초 1회만 전체 수집, 이후 신규 날짜만 호출
+    """
     if not KRX_AUTH_KEY:
         raise ValueError("KRX_AUTH_KEY 환경변수가 설정되지 않았습니다.")
 
@@ -306,57 +310,83 @@ def calc_put_call_ratio() -> pd.Series:
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # 400 거래일 (252일 정규화 + ~148일 유효 히스토리)
+    # 수집 목표 기간 (252일 정규화 + 여유)
     pcr_start = (datetime.today() - timedelta(days=400 * 7 // 5 + 30)).strftime("%Y-%m-%d")
-    dates = pd.bdate_range(start=pcr_start, end=TODAY_FDR)
-    print(f"  수집 기간: {pcr_start} ~ {TODAY_FDR} ({len(dates)}일)")
+    all_dates  = pd.bdate_range(start=pcr_start, end=TODAY_FDR)
 
-    def _fetch_one(date_str):
-        # 스레드별 독립 인스턴스 (thread-safe)
-        local_api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
-        result = local_api.get_options_daily_trade(bas_dd=date_str)
-        rows = result.get("OutBlock_1", [])
-        if not rows:
-            return None, rows
-        k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
-        if not k200:
-            k200 = rows
-        call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
-        put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
-        ratio = put_vol / call_vol if call_vol > 0 else None
-        return ratio, rows
+    # ── 캐시 로드 ──
+    pcr_cache: dict = {}
+    if os.path.exists(PCR_CACHE_PATH):
+        try:
+            cache_df = pd.read_csv(PCR_CACHE_PATH, index_col=0, parse_dates=True,
+                                   encoding="utf-8-sig")
+            pcr_cache = cache_df.iloc[:, 0].dropna().to_dict()
+            print(f"[4/7] 풋/콜 비율 — 캐시 로드: {len(pcr_cache)}일")
+        except Exception as e:
+            print(f"[4/7] 풋/콜 비율 — 캐시 로드 실패 (재수집): {e}")
 
-    pc_data = {}
-    first_row_printed = False
-    date_list = list(dates)
+    # ── 미수집 날짜만 API 호출 ──
+    missing = [d for d in all_dates if d not in pcr_cache]
+    print(f"  신규 수집 필요: {len(missing)}일 / 전체 목표: {len(all_dates)}일")
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_date = {
-            executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
-            for d in date_list
-        }
-        completed = 0
-        for future in as_completed(future_to_date):
-            date = future_to_date[future]
-            completed += 1
-            try:
-                ratio, rows = future.result(timeout=30)
-                if not first_row_printed and rows:
-                    print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
-                    first_row_printed = True
-                if ratio is not None:
-                    pc_data[date] = ratio
-            except Exception:
-                pass
-            if completed % 50 == 0:
-                print(f"  [{completed}/{len(date_list)}] 처리 중... (유효 데이터: {len(pc_data)}일)")
+    if missing:
+        def _fetch_one(date_str):
+            local_api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
+            result = local_api.get_options_daily_trade(bas_dd=date_str)
+            rows = result.get("OutBlock_1", [])
+            if not rows:
+                return None, rows
+            k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
+            if not k200:
+                k200 = rows
+            call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
+            put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
+            ratio = put_vol / call_vol if call_vol > 0 else None
+            return ratio, rows
 
-    if len(pc_data) < 20:
-        print(f"  [경고] 풋/콜 비율 데이터 부족 ({len(pc_data)}일) — IP 화이트리스트 미등록 가능성. 해당 인자 제외하고 계속 진행.")
+        new_data: dict = {}
+        first_row_printed = False
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_date = {
+                executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
+                for d in missing
+            }
+            completed = 0
+            for future in as_completed(future_to_date):
+                date = future_to_date[future]
+                completed += 1
+                try:
+                    ratio, rows = future.result(timeout=30)
+                    if not first_row_printed and rows:
+                        print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
+                        first_row_printed = True
+                    if ratio is not None:
+                        new_data[date] = ratio
+                except Exception:
+                    pass
+                if completed % 50 == 0:
+                    print(f"  [{completed}/{len(missing)}] 처리 중... (신규 유효: {len(new_data)}일)")
+
+        print(f"  신규 수집 완료: {len(new_data)}일")
+        pcr_cache.update(new_data)
+
+        # ── 캐시 저장 (목표 기간 외 오래된 데이터는 정리) ──
+        cache_series = pd.Series(pcr_cache).sort_index()
+        cutoff = pd.Timestamp(pcr_start)
+        cache_series = cache_series[cache_series.index >= cutoff]
+        cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
+        print(f"  캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
+
+    # ── 목표 기간 내 데이터로 정규화 ──
+    available = {k: v for k, v in pcr_cache.items()
+                 if pd.Timestamp(pcr_start) <= k <= pd.Timestamp(TODAY_FDR)}
+    if len(available) < 20:
+        print(f"  [경고] 풋/콜 비율 데이터 부족 ({len(available)}일) — 일일 호출 한도 초과 가능성. 해당 인자 제외.")
         return None
 
-    print(f"  수집 완료: {len(pc_data)}일치 P/C 비율")
-    return normalize_series(pd.Series(pc_data).sort_index(), invert=True)
+    print(f"  사용 데이터: {len(available)}일치 P/C 비율")
+    return normalize_series(pd.Series(available).sort_index(), invert=True)
 
 
 # ============================================================
