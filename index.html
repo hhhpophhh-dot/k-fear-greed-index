@@ -311,6 +311,7 @@
             <th>모멘텀</th>
             <th>강도</th>
             <th>폭</th>
+            <th>풋/콜</th>
             <th>신용</th>
             <th>변동성</th>
             <th>안전자산</th>
@@ -340,6 +341,10 @@
         <dd>거래량 기반 McClellan Summation Index — 상승 종목 거래량 비중이 높을수록 탐욕</dd>
       </div>
       <div class="desc-item">
+        <dt>풋/콜 비율</dt>
+        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향)</dd>
+      </div>
+      <div class="desc-item">
         <dt>신용스프레드</dt>
         <dd>회사채 BBB- 3년물 − 국고채 3년물 — 스프레드가 좁을수록 탐욕 (역방향)</dd>
       </div>
@@ -350,11 +355,6 @@
       <div class="desc-item">
         <dt>안전자산 수요</dt>
         <dd>KOSPI 20일 수익률 − 국고채 3년물 20일 금리변화 — 주식 우세일수록 탐욕</dd>
-      </div>
-      <hr class="desc-divider">
-      <div class="desc-item excluded">
-        <dt>풋/콜 비율</dt>
-        <dd>CNN 원본 인자이나 미적용 — KRX 옵션 데이터 API가 브라우저 세션 인증을 요구해 공개 수집 불가</dd>
       </div>
     </dl>
   </div>
@@ -490,6 +490,7 @@ const FACTOR_LABELS = {
   "주가_모멘텀":   "주가 모멘텀",
   "주가_강도":     "주가 강도",
   "주가_폭":       "주가 폭",
+  "풋콜_비율":     "풋/콜 비율",
   "신용스프레드":  "신용스프레드",
   "시장_변동성":   "시장 변동성",
   "안전자산_수요": "안전자산 수요",
@@ -641,6 +642,7 @@ function renderTable(rows) {
       <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
       <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
       <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
       <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>

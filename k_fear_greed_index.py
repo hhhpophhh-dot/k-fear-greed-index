@@ -23,6 +23,7 @@ pip install pykrx finance-datareader pandas numpy requests
 """
 
 import os
+import time
 import requests
 import pandas as pd
 import numpy as np
@@ -37,6 +38,7 @@ warnings.filterwarnings('ignore')
 # ⚙️ 설정
 # ============================================================
 ECOS_API_KEY    = os.environ.get("ECOS_API_KEY", "X2QOJYHO80BJKPBF1ODJ")
+KRX_AUTH_KEY    = os.environ.get("KRX_AUTH_KEY", "")
 CNN_FNG_URL     = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
 LOOKBACK_DAYS = 252                        # 정규화 기준 기간 (약 1년 거래일)
 CUTOFF_HOUR   = 17                         # 데이터 기준일 전환 시각 (17:00 이후 = 당일)
@@ -191,7 +193,7 @@ def calc_price_momentum() -> pd.Series:
 
     데이터: FinanceDataReader KS11 (KRX 로그인 불필요)
     """
-    print("[1/6] 주가 모멘텀 계산 중...")
+    print("[1/7] 주가 모멘텀 계산 중...")
 
     close = get_kospi_close()
     ma125 = close.rolling(window=125).mean()
@@ -214,7 +216,7 @@ def calc_price_strength():
 
     Returns: (정규화된 시리즈, 신고가_종목수 시리즈, 신저가_종목수 시리즈)
     """
-    print("[2/6] 주가 강도 계산 중 (전 종목 수집, 수분 소요)...")
+    print("[2/7] 주가 강도 계산 중 (전 종목 수집, 수분 소요)...")
 
     data = get_kospi_stock_data()
     close_df = data["close"]
@@ -256,7 +258,7 @@ def calc_market_breadth() -> pd.Series:
 
     데이터: pykrx get_market_ohlcv_by_date (종목별 루프, KRX 로그인 불필요)
     """
-    print("[3/6] 주가 폭 (McClellan Summation) 계산 중...")
+    print("[3/7] 주가 폭 (McClellan Summation) 계산 중...")
 
     data = get_kospi_stock_data()
     vol_df = data["volume"]
@@ -279,9 +281,72 @@ def calc_market_breadth() -> pd.Series:
 
 
 # ============================================================
-# ❌ 인자 4: 풋/콜 비율 — 제외 (B안 적용)
+# 📊 인자 4: 풋/콜 비율 (Put/Call Ratio)
 # ============================================================
-# pykrx 옵션 함수 없음 + KRX 포털 세션 인증 필요 → 공개 수집 불가
+def calc_put_call_ratio() -> pd.Series:
+    """
+    KOSPI200 옵션 풋/콜 비율
+
+    P/C 비율 = KOSPI200 풋옵션 일별 거래량 / 콜옵션 일별 거래량
+    높을수록 공포(풋 매수 우위) → invert=True
+
+    데이터: KRX Open API (openapi.krx.co.kr)
+    인증: AUTH_KEY 헤더 — data.krx.co.kr 세션 쿠키와 무관한 별도 시스템
+    환경변수: KRX_AUTH_KEY (GitHub Secret)
+    """
+    print("[4/7] 풋/콜 비율 계산 중 (KRX Open API, 수분 소요)...")
+
+    if not KRX_AUTH_KEY:
+        raise ValueError("KRX_AUTH_KEY 환경변수가 설정되지 않았습니다.")
+
+    try:
+        from pykrx_openapi import KRXOpenAPI
+    except ImportError:
+        raise ImportError("pykrx-openapi 미설치: pip install pykrx-openapi")
+
+    api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
+    dates = pd.bdate_range(start=DATA_START_FDR, end=TODAY_FDR)
+
+    pc_data = {}
+    first_row_printed = False
+
+    for i, date in enumerate(dates):
+        date_str = date.strftime("%Y%m%d")
+        try:
+            result = api.get_options_daily_trade(bas_dd=date_str)
+            rows = result.get("OutBlock_1", [])
+
+            if not rows:
+                continue
+
+            if not first_row_printed:
+                print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
+                first_row_printed = True
+
+            # KOSPI200 옵션만 필터 (itmNm 기준, 실패 시 전체 사용)
+            k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
+            if not k200:
+                k200 = rows
+
+            call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
+            put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
+
+            if call_vol > 0:
+                pc_data[date] = put_vol / call_vol
+
+        except Exception:
+            continue
+
+        if (i + 1) % 100 == 0:
+            print(f"  [{i+1}/{len(dates)}] 날짜 처리 중...")
+
+        time.sleep(0.2)  # API 레이트 리밋 방지
+
+    if len(pc_data) < 20:
+        raise ValueError(f"풋/콜 비율 데이터 부족 ({len(pc_data)}일). API 응답 필드 확인 필요")
+
+    print(f"  수집 완료: {len(pc_data)}일치 P/C 비율")
+    return normalize_series(pd.Series(pc_data).sort_index(), invert=True)
 
 
 # ============================================================
@@ -298,7 +363,7 @@ def calc_credit_spread() -> pd.Series:
     - 국고채 3년물  : 010200000
     - 회사채 BBB- 3년물: 010320000
     """
-    print("[4/6] 신용스프레드 계산 중 (ECOS API)...")
+    print("[5/7] 신용스프레드 계산 중 (ECOS API)...")
 
     treasury_3y = get_ecos_data("817Y002", "010200000", DATA_START, TODAY)
     corp_bbb_3y = get_ecos_data("817Y002", "010320000", DATA_START, TODAY)
@@ -325,7 +390,7 @@ def calc_market_volatility() -> pd.Series:
 
     데이터: FinanceDataReader KS11 (KRX 로그인 불필요)
     """
-    print("[5/6] 시장 변동성 (실현변동성 - VKOSPI 대체) 계산 중...")
+    print("[6/7] 시장 변동성 (실현변동성 - VKOSPI 대체) 계산 중...")
 
     close  = get_kospi_close()
     ret    = close.pct_change()
@@ -349,7 +414,7 @@ def calc_safe_haven_demand() -> pd.Series:
 
     데이터: FDR KS11 + ECOS API
     """
-    print("[6/6] 안전자산 수요 계산 중...")
+    print("[7/7] 안전자산 수요 계산 중...")
 
     kospi_close = get_kospi_close()
     kospi_ret_20 = kospi_close.pct_change(periods=20)
@@ -382,17 +447,21 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     55 ~ 75: 탐욕 (Greed)
     75 ~100: 극단적 탐욕 (Extreme Greed)
     """
-    print("\n=== K-탐욕공포지수 산출 시작 (6개 인자) ===\n")
+    has_pcr = bool(KRX_AUTH_KEY)
+    n_factors = 7 if has_pcr else 6
+    print(f"\n=== K-탐욕공포지수 산출 시작 ({n_factors}개 인자) ===\n")
 
     strength_series, raw_highs, raw_lows = calc_price_strength()
     factors = {
         "주가_모멘텀":   calc_price_momentum(),
         "주가_강도":     strength_series,
         "주가_폭":       calc_market_breadth(),
-        "신용스프레드":  calc_credit_spread(),
-        "시장_변동성":   calc_market_volatility(),
-        "안전자산_수요": calc_safe_haven_demand(),
     }
+    if has_pcr:
+        factors["풋콜_비율"] = calc_put_call_ratio()
+    factors["신용스프레드"]  = calc_credit_spread()
+    factors["시장_변동성"]   = calc_market_volatility()
+    factors["안전자산_수요"] = calc_safe_haven_demand()
 
     result = pd.DataFrame(factors)
     result["신고가_종목수"] = raw_highs.reindex(result.index)
@@ -429,6 +498,7 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
         "주가_모멘텀":   ("↑탐욕",           "KOSPI vs MA125"),
         "주가_강도":     ("↑탐욕",           "52주 신고가 비율"),
         "주가_폭":       ("↑탐욕",           "McClellan Summation"),
+        "풋콜_비율":     ("↓탐욕(invert)",   "KOSPI200 P/C 비율"),
         "신용스프레드":  ("↓탐욕(invert)",   "BBB- 스프레드"),
         "시장_변동성":   ("↓탐욕(invert)",   "20일 실현변동성"),
         "안전자산_수요": ("↑탐욕",           "주식-채권 상대수익"),
