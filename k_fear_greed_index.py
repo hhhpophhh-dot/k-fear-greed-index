@@ -126,58 +126,83 @@ def get_kospi_close() -> pd.Series:
     return df["Close"].astype(float)
 
 
-def get_naver_kospi100_close() -> pd.Series:
+def _fetch_kospi100_from_naver(start_dt, end_dt) -> list:
     """
-    네이버 금융 모바일 API로 KOSPI100 지수 종가 시계열 반환.
-
-    FDR이 KOSPI100 심볼을 미지원하므로 네이버 금융 API를 직접 호출.
-    3년치 요청 시 409 → KOSPI100 전용으로 최근 2년만 요청 + 90일 청크 분할.
-    정규화에 252일 필요하므로 2년(약 500거래일)으로 충분.
+    네이버 금융 PC API (fchart)로 KOSPI100 종가 수집 시도.
+    모바일 API(m.stock.naver.com) 409 이슈로 PC API로 대체.
+    실패 시 빈 리스트 반환.
     """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         ),
-        "Referer": "https://finance.naver.com",
-        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://finance.naver.com/sise/sise_index.nhn?code=KOSPI100",
+        "Accept": "application/json, */*",
     }
-    url = "https://m.stock.naver.com/api/index/KOSPI100/price"
 
-    # KOSPI100 전용: 최근 2년만 요청 (3년 이상은 409 오류)
-    # 정규화 기준 252일보다 넉넉하게 2년(~500거래일) 확보
+    # PC API: 날짜 범위 조회 엔드포인트
+    url = "https://api.stock.naver.com/index/KOSPI100/basicIndicesByTradedAt"
+    params = {
+        "startTradedAt": start_dt.strftime("%Y-%m-%d"),
+        "endTradedAt":   end_dt.strftime("%Y-%m-%d"),
+    }
+    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", data.get("indices", [])))
+    print(f"  [진단] 네이버 PC API 응답: {len(items)}건, 키: {list(items[0].keys()) if items else '없음'}")
+    return items
+
+
+def _fetch_kospi100_from_stooq() -> pd.Series:
+    """
+    Stooq(FDR 경유)로 KOSPI100 종가 수집 시도.
+    심볼: ^ksp100 또는 KSP100.PL 등 시도.
+    실패 시 ValueError 발생.
+    """
+    k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
+    for sym in ["^ksp100", "KSP100.PL", "KS100.WA"]:
+        try:
+            df = fdr.DataReader(sym, k100_start, TODAY_FDR)
+            if len(df) > 100 and "Close" in df.columns:
+                print(f"  Stooq KOSPI100 수집 성공 (심볼: {sym}): {len(df)}일")
+                return df["Close"].astype(float)
+        except Exception:
+            continue
+    raise ValueError("Stooq KOSPI100 수집 실패 (모든 심볼 시도)")
+
+
+def get_naver_kospi100_close() -> pd.Series:
+    """
+    KOSPI100 지수 종가 시계열 반환.
+
+    우선순위:
+    1. 네이버 금융 PC API (api.stock.naver.com)
+    2. Stooq (FDR 경유)
+    둘 다 실패 시 ValueError 발생 → 호출부에서 graceful fallback 처리.
+    """
     k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
     start_dt = datetime.strptime(k100_start, "%Y-%m-%d")
     end_dt   = datetime.strptime(TODAY_FDR, "%Y-%m-%d")
-    all_items = []
-    first_chunk = True
 
-    chunk_start = start_dt
-    while chunk_start <= end_dt:
-        chunk_end = min(chunk_start + timedelta(days=89), end_dt)  # 90일 청크
-        params = {
-            "startTime": chunk_start.strftime("%Y%m%d"),
-            "endTime":   chunk_end.strftime("%Y%m%d"),
-            "timeframe": "day",
-        }
-        resp = requests.get(url, params=params, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", []))
-        if first_chunk and items:
-            print(f"  [진단] KOSPI100 API 응답 키: {list(items[0].keys())}")
-            first_chunk = False
-        all_items.extend(items)
-        chunk_start = chunk_end + timedelta(days=1)
-        time.sleep(0.3)  # 청크 간 짧은 딜레이 (Rate limit 방지)
+    # ── 1안: 네이버 PC API ──
+    try:
+        items = _fetch_kospi100_from_naver(start_dt, end_dt)
+    except Exception as e:
+        print(f"  [KOSPI100] 네이버 PC API 실패: {e} → Stooq 시도")
+        return _fetch_kospi100_from_stooq()
 
-    if not all_items:
-        raise ValueError("KOSPI100 API 응답 비어있음")
+    if not items:
+        print("  [KOSPI100] 네이버 PC API 응답 비어있음 → Stooq 시도")
+        return _fetch_kospi100_from_stooq()
 
     records = []
-    for item in all_items:
-        date_str  = item.get("localTradedAt") or item.get("date") or item.get("dt")
-        close_val = item.get("closePrice")    or item.get("close") or item.get("cls")
+    for item in items:
+        date_str  = (item.get("tradedAt") or item.get("localTradedAt")
+                     or item.get("date") or item.get("dt"))
+        close_val = (item.get("closePrice") or item.get("endPrice")
+                     or item.get("close") or item.get("cls"))
         if date_str and close_val:
             try:
                 records.append({
@@ -188,11 +213,12 @@ def get_naver_kospi100_close() -> pd.Series:
                 pass
 
     if len(records) < 20:
-        raise ValueError(f"KOSPI100 데이터 부족 ({len(records)}개). API 응답 구조 확인 필요")
+        print(f"  [KOSPI100] 네이버 PC API 데이터 부족 ({len(records)}개) → Stooq 시도")
+        return _fetch_kospi100_from_stooq()
 
     df = pd.DataFrame(records).set_index("date").sort_index()
-    df = df[~df.index.duplicated(keep="last")]  # 청크 경계 중복 제거
-    print(f"  KOSPI100 종가 수집 완료: {len(df)}일치")
+    df = df[~df.index.duplicated(keep="last")]
+    print(f"  KOSPI100 종가 수집 완료 (네이버 PC API): {len(df)}일치")
     return df["close"]
 
 
