@@ -304,18 +304,28 @@ def calc_put_call_ratio() -> pd.Series:
     except ImportError:
         raise ImportError("pykrx-openapi 미설치: pip install pykrx-openapi")
 
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
     api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
-    dates = pd.bdate_range(start=DATA_START_FDR, end=TODAY_FDR)
+
+    # 400 거래일 (252일 정규화 + ~148일 유효 히스토리, 약 20분 소요)
+    pcr_start = (datetime.today() - timedelta(days=400 * 7 // 5 + 30)).strftime("%Y-%m-%d")
+    dates = pd.bdate_range(start=pcr_start, end=TODAY_FDR)
+    print(f"  수집 기간: {pcr_start} ~ {TODAY_FDR} ({len(dates)}일)")
 
     pc_data = {}
     first_row_printed = False
 
+    def _fetch(date_str):
+        return api.get_options_daily_trade(bas_dd=date_str)
+
     for i, date in enumerate(dates):
         date_str = date.strftime("%Y%m%d")
         try:
-            result = api.get_options_daily_trade(bas_dd=date_str)
-            rows = result.get("OutBlock_1", [])
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(_fetch, date_str)
+                result = fut.result(timeout=15)  # 15초 초과 시 skip
 
+            rows = result.get("OutBlock_1", [])
             if not rows:
                 continue
 
@@ -334,13 +344,11 @@ def calc_put_call_ratio() -> pd.Series:
             if call_vol > 0:
                 pc_data[date] = put_vol / call_vol
 
-        except Exception:
+        except (FutureTimeout, Exception):
             continue
 
-        if (i + 1) % 100 == 0:
-            print(f"  [{i+1}/{len(dates)}] 날짜 처리 중...")
-
-        time.sleep(0.2)  # API 레이트 리밋 방지
+        if (i + 1) % 50 == 0:
+            print(f"  [{i+1}/{len(dates)}] 처리 중... (유효 데이터: {len(pc_data)}일)")
 
     if len(pc_data) < 20:
         raise ValueError(f"풋/콜 비율 데이터 부족 ({len(pc_data)}일). API 응답 필드 확인 필요")
