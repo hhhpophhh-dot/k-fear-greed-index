@@ -294,7 +294,7 @@ def calc_put_call_ratio() -> pd.Series:
     인증: AUTH_KEY 헤더 — data.krx.co.kr 세션 쿠키와 무관한 별도 시스템
     환경변수: KRX_AUTH_KEY (GitHub Secret)
     """
-    print("[4/7] 풋/콜 비율 계산 중 (KRX Open API, 수분 소요)...")
+    print("[4/7] 풋/콜 비율 계산 중 (KRX Open API, 4 병렬, 약 15분 소요)...")
 
     if not KRX_AUTH_KEY:
         raise ValueError("KRX_AUTH_KEY 환경변수가 설정되지 않았습니다.")
@@ -304,51 +304,52 @@ def calc_put_call_ratio() -> pd.Series:
     except ImportError:
         raise ImportError("pykrx-openapi 미설치: pip install pykrx-openapi")
 
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
-    api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # 400 거래일 (252일 정규화 + ~148일 유효 히스토리, 약 20분 소요)
+    # 400 거래일 (252일 정규화 + ~148일 유효 히스토리)
     pcr_start = (datetime.today() - timedelta(days=400 * 7 // 5 + 30)).strftime("%Y-%m-%d")
     dates = pd.bdate_range(start=pcr_start, end=TODAY_FDR)
     print(f"  수집 기간: {pcr_start} ~ {TODAY_FDR} ({len(dates)}일)")
 
+    def _fetch_one(date_str):
+        # 스레드별 독립 인스턴스 (thread-safe)
+        local_api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
+        result = local_api.get_options_daily_trade(bas_dd=date_str)
+        rows = result.get("OutBlock_1", [])
+        if not rows:
+            return None, rows
+        k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
+        if not k200:
+            k200 = rows
+        call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
+        put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
+        ratio = put_vol / call_vol if call_vol > 0 else None
+        return ratio, rows
+
     pc_data = {}
     first_row_printed = False
+    date_list = list(dates)
 
-    def _fetch(date_str):
-        return api.get_options_daily_trade(bas_dd=date_str)
-
-    for i, date in enumerate(dates):
-        date_str = date.strftime("%Y%m%d")
-        try:
-            with ThreadPoolExecutor(max_workers=1) as ex:
-                fut = ex.submit(_fetch, date_str)
-                result = fut.result(timeout=15)  # 15초 초과 시 skip
-
-            rows = result.get("OutBlock_1", [])
-            if not rows:
-                continue
-
-            if not first_row_printed:
-                print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
-                first_row_printed = True
-
-            # KOSPI200 옵션만 필터 (itmNm 기준, 실패 시 전체 사용)
-            k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
-            if not k200:
-                k200 = rows
-
-            call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
-            put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
-
-            if call_vol > 0:
-                pc_data[date] = put_vol / call_vol
-
-        except (FutureTimeout, Exception):
-            continue
-
-        if (i + 1) % 50 == 0:
-            print(f"  [{i+1}/{len(dates)}] 처리 중... (유효 데이터: {len(pc_data)}일)")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_to_date = {
+            executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
+            for d in date_list
+        }
+        completed = 0
+        for future in as_completed(future_to_date):
+            date = future_to_date[future]
+            completed += 1
+            try:
+                ratio, rows = future.result(timeout=30)
+                if not first_row_printed and rows:
+                    print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
+                    first_row_printed = True
+                if ratio is not None:
+                    pc_data[date] = ratio
+            except Exception:
+                pass
+            if completed % 50 == 0:
+                print(f"  [{completed}/{len(date_list)}] 처리 중... (유효 데이터: {len(pc_data)}일)")
 
     if len(pc_data) < 20:
         raise ValueError(f"풋/콜 비율 데이터 부족 ({len(pc_data)}일). API 응답 필드 확인 필요")
