@@ -277,7 +277,7 @@
       <div class="cnn-compare" id="cnnCompare" style="display:none;">
         <span class="cnn-label">CNN Fear &amp; Greed</span>
         <span class="cnn-score" id="cnnScore">—</span>
-        <span id="cnnRating" style="color:var(--text);font-weight:600;"></span>
+        <span id="cnnRating" style="font-weight:600;"></span>
       </div>
     </div>
 
@@ -675,8 +675,19 @@ function renderAll(text) {
   const cnnScore = parseFloat(latest["CNN_탐욕공포지수"]);
   const cnnRating = latest["CNN_등급"] || "";
   if (!isNaN(cnnScore) && cnnRating) {
+    const CNN_KO = {
+      "extreme fear": { ko: "극단적 공포", hex: "#d32f2f" },
+      "fear":         { ko: "공포",        hex: "#f57c00" },
+      "neutral":      { ko: "중립",        hex: "#fbc02d" },
+      "greed":        { ko: "탐욕",        hex: "#388e3c" },
+      "extreme greed":{ ko: "극단적 탐욕", hex: "#1565c0" },
+    };
+    const key = cnnRating.toLowerCase();
+    const info = CNN_KO[key] || { ko: cnnRating, hex: "var(--text)" };
     document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
-    document.getElementById("cnnRating").textContent = cnnRating;
+    const ratingEl = document.getElementById("cnnRating");
+    ratingEl.textContent = `${info.ko} (${cnnRating})`;
+    ratingEl.style.color = info.hex;
     document.getElementById("cnnCompare").style.display = "flex";
   }
 
