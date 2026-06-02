@@ -151,7 +151,7 @@ def get_naver_kospi100_close() -> pd.Series:
 
     chunk_start = start_dt
     while chunk_start <= end_dt:
-        chunk_end = min(chunk_start + timedelta(days=364), end_dt)
+        chunk_end = min(chunk_start + timedelta(days=89), end_dt)  # 90일 청크
         params = {
             "startTime": chunk_start.strftime("%Y%m%d"),
             "endTime":   chunk_end.strftime("%Y%m%d"),
@@ -166,6 +166,7 @@ def get_naver_kospi100_close() -> pd.Series:
             first_chunk = False
         all_items.extend(items)
         chunk_start = chunk_end + timedelta(days=1)
+        time.sleep(0.3)  # 청크 간 짧은 딜레이 (Rate limit 방지)
 
     if not all_items:
         raise ValueError("KOSPI100 API 응답 비어있음")
