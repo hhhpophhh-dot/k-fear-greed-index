@@ -449,9 +449,19 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
 # ============================================================
 def fetch_cnn_fear_greed():
     """CNN Fear & Greed Index 현재값 조회 (비공식 엔드포인트, 실패 시 None 반환)"""
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://edition.cnn.com/markets/fear-and-greed",
+        "Origin": "https://edition.cnn.com",
+    }
     try:
-        resp = requests.get(CNN_FNG_URL, timeout=10,
-                            headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.get(CNN_FNG_URL, timeout=10, headers=headers)
         resp.raise_for_status()
         fng = resp.json()["fear_and_greed"]
         score  = round(float(fng["score"]), 1)
