@@ -260,6 +260,7 @@
         </div>
       </div>
       <div class="gauge-date" id="gaugeDate">—</div>
+      <div class="gauge-date" id="gaugeUpdated" style="margin-top:2px;"></div>
     </div>
 
     <!-- 인자별 바 -->
@@ -644,6 +645,9 @@ function renderAll(text) {
   document.getElementById("gaugeGrade").textContent = grade;
   document.getElementById("gaugeDate").textContent =
     `기준일: ${latest["날짜"].slice(0, 10)}`;
+  const updatedEl = document.getElementById("gaugeUpdated");
+  const updTime = latest["업데이트_시각"];
+  updatedEl.textContent = updTime ? `(업데이트: ${updTime} KST)` : "";
 
   renderFactorBars(latest);
   renderHistoryChart(rows.slice(-60));   // 최근 60일만 표시

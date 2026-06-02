@@ -408,6 +408,10 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
 
     result["등급"] = result["K_탐욕공포지수"].apply(label)
 
+    # 스크립트 실행 시각(KST)을 최신 행에만 기록
+    result["업데이트_시각"] = ""
+    result.loc[result.index[-1], "업데이트_시각"] = _now.strftime("%H:%M")
+
     # ── 최신 날짜 요약 출력 ──
     latest   = result.iloc[-1]
     date_str = result.index[-1].strftime("%Y-%m-%d")
