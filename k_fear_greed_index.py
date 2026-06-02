@@ -131,6 +131,7 @@ def get_naver_kospi100_close() -> pd.Series:
     네이버 금융 모바일 API로 KOSPI100 지수 종가 시계열 반환.
 
     FDR이 KOSPI100 심볼을 미지원하므로 네이버 금융 API를 직접 호출.
+    3년치 단일 요청 시 409 오류 발생 → 1년 단위 청크로 분할 요청.
     """
     headers = {
         "User-Agent": (
@@ -140,23 +141,37 @@ def get_naver_kospi100_close() -> pd.Series:
         "Referer": "https://finance.naver.com",
         "Accept": "application/json, text/plain, */*",
     }
-    url    = "https://m.stock.naver.com/api/index/KOSPI100/price"
-    params = {
-        "startTime": DATA_START_FDR.replace("-", ""),
-        "endTime":   TODAY_FDR.replace("-", ""),
-        "timeframe": "day",
-    }
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    url = "https://m.stock.naver.com/api/index/KOSPI100/price"
 
-    items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", []))
-    if not items:
+    # 1년 단위 청크로 분할 요청 (단일 3년 요청 시 409)
+    start_dt = datetime.strptime(DATA_START_FDR, "%Y-%m-%d")
+    end_dt   = datetime.strptime(TODAY_FDR, "%Y-%m-%d")
+    all_items = []
+    first_chunk = True
+
+    chunk_start = start_dt
+    while chunk_start <= end_dt:
+        chunk_end = min(chunk_start + timedelta(days=364), end_dt)
+        params = {
+            "startTime": chunk_start.strftime("%Y%m%d"),
+            "endTime":   chunk_end.strftime("%Y%m%d"),
+            "timeframe": "day",
+        }
+        resp = requests.get(url, params=params, headers=headers, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", []))
+        if first_chunk and items:
+            print(f"  [진단] KOSPI100 API 응답 키: {list(items[0].keys())}")
+            first_chunk = False
+        all_items.extend(items)
+        chunk_start = chunk_end + timedelta(days=1)
+
+    if not all_items:
         raise ValueError("KOSPI100 API 응답 비어있음")
 
-    print(f"  [진단] KOSPI100 API 응답 키: {list(items[0].keys())}")
     records = []
-    for item in items:
+    for item in all_items:
         date_str  = item.get("localTradedAt") or item.get("date") or item.get("dt")
         close_val = item.get("closePrice")    or item.get("close") or item.get("cls")
         if date_str and close_val:
@@ -172,6 +187,7 @@ def get_naver_kospi100_close() -> pd.Series:
         raise ValueError(f"KOSPI100 데이터 부족 ({len(records)}개). API 응답 구조 확인 필요")
 
     df = pd.DataFrame(records).set_index("date").sort_index()
+    df = df[~df.index.duplicated(keep="last")]  # 청크 경계 중복 제거
     print(f"  KOSPI100 종가 수집 완료: {len(df)}일치")
     return df["close"]
 
@@ -413,12 +429,16 @@ def calc_put_call_ratio() -> pd.Series:
         new_data: dict = {}
         first_row_printed = False
 
+        PCR_ABORT_THRESHOLD = 10  # 연속 빈 응답 N회 → API 한도 소진으로 판단하고 중단
+
         with ThreadPoolExecutor(max_workers=4) as executor:
             future_to_date = {
                 executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
                 for d in missing
             }
             completed = 0
+            consecutive_empty = 0
+            aborted = False
             for future in as_completed(future_to_date):
                 date = future_to_date[future]
                 completed += 1
@@ -427,12 +447,20 @@ def calc_put_call_ratio() -> pd.Series:
                     if not first_row_printed and rows:
                         print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
                         first_row_printed = True
+                    if rows:
+                        consecutive_empty = 0
+                    else:
+                        consecutive_empty += 1
                     if ratio is not None:
                         new_data[date] = ratio
                 except Exception:
-                    pass
+                    consecutive_empty += 1
                 if completed % 50 == 0:
                     print(f"  [{completed}/{len(missing)}] 처리 중... (신규 유효: {len(new_data)}일)")
+                if consecutive_empty >= PCR_ABORT_THRESHOLD:
+                    print(f"  [조기 중단] 연속 {consecutive_empty}회 빈 응답 — API 한도 소진 추정. 수집 중단.")
+                    aborted = True
+                    break
 
         print(f"  신규 수집 완료: {len(new_data)}일")
         pcr_cache.update(new_data)
@@ -545,7 +573,19 @@ def calc_k_fear_greed_index(universe: str = "all") -> pd.DataFrame:
     55 ~ 75: 탐욕 / 75 ~100: 극단적 탐욕
     """
     label = "KOSPI100" if universe == "k100" else "KOSPI 전체"
-    has_pcr = bool(KRX_AUTH_KEY) and universe == "all"  # PCR은 전체 지수에만 적용
+
+    # PCR: KRX_AUTH_KEY 있고, 캐시 파일에 유효 데이터 ≥20일 있을 때만 시도
+    # 캐시 미존재(첫 실행) 또는 데이터 부족 → 완전 건너뜀 (API 호출 없음)
+    has_pcr = False
+    if bool(KRX_AUTH_KEY) and universe == "all" and os.path.exists(PCR_CACHE_PATH):
+        try:
+            _pcr_df = pd.read_csv(PCR_CACHE_PATH, index_col=0, parse_dates=True,
+                                   encoding="utf-8-sig")
+            has_pcr = len(_pcr_df.dropna()) >= 20
+        except Exception:
+            pass
+    if not has_pcr and universe == "all":
+        print("[4/7] 풋/콜 비율 — 캐시 데이터 없음, 건너뜀 (6인자로 계속)")
     print(f"\n=== K-탐욕공포지수 산출 시작 [{label}] ===\n")
 
     # ── 데이터 소스 선택 ──
