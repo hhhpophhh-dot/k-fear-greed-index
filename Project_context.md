@@ -170,3 +170,16 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 - index.html: 기준일 표시 아래 `(업데이트: HH:MM KST)` 추가
 - 하단 인자 설명 카드에 풋/콜 비율 항목 추가 (취소선 + 회색 처리)
   - 내용: "KRX 옵션 데이터 API가 브라우저 세션 인증을 요구해 공개 수집 불가"
+
+[Sub 11 - CNN Fear & Greed Index 비교 위젯 추가 (2026-06-02)]
+- Python: CNN 비공식 API(production.dataviz.cnn.io/index/fearandgreed/graphdata)에서 현재값 조회
+  - 첫 시도: User-Agent만 설정 → HTTP 418 봇 차단 실패
+  - 헤더 보강(Accept, Referer, Origin 추가) → 정상 조회 성공
+  - CSV 최신 행에 `CNN_탐욕공포지수`, `CNN_등급`(영문) 컬럼 저장
+- index.html: 게이지 하단 CNN 비교 위젯 추가
+  - 수치 흰색, 등급 한글+색상(K-지수와 동일 팔레트), 영문 병기
+  - CNN 조회 실패 시 위젯 숨김(display:none) 처리
+- 모바일 레이아웃 한 줄 처리
+  - 헤더: white-space:nowrap + h1 크기 축소(1.35→1.1rem), 부제목 ellipsis
+  - 신고가/신저가 라인: 글자 축소(0.68rem) + white-space:nowrap
+  - 인자 설명 카드: grid→flex 전환, dd는 ellipsis
