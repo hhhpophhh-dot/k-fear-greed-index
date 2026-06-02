@@ -133,6 +133,7 @@
     .desc-item dd { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .desc-item.excluded { opacity: 0.45; }
     .desc-item.excluded dt { text-decoration: line-through; }
+    .hide-pcr .pcr-col { display: none; }
     .desc-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
     .factor-header {
       display: flex;
@@ -338,7 +339,7 @@
             <th>모멘텀</th>
             <th>강도</th>
             <th>폭</th>
-            <th>풋/콜</th>
+            <th class="pcr-col">풋/콜</th>
             <th>신용</th>
             <th>변동성</th>
             <th>안전자산</th>
@@ -367,9 +368,9 @@
         <dt>주가 폭</dt>
         <dd>거래량 기반 McClellan Summation Index — 상승 종목 거래량 비중이 높을수록 탐욕</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item excluded" id="pcrDescItem">
         <dt>풋/콜 비율</dt>
-        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향)</dd>
+        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향) · 데이터 수집 중</dd>
       </div>
       <div class="desc-item">
         <dt>신용스프레드</dt>
@@ -386,9 +387,6 @@
     </dl>
   </div>
 
-  <p style="text-align:center; font-size:0.75rem; color:var(--muted); padding: 8px 0 4px; border-top: 1px solid var(--border);">
-    ⚠️ 현재 풋/콜 비율 인자 추가 작업 중입니다. 일부 수치가 정확하지 않을 수 있습니다.
-  </p>
 
 </div><!-- /.main -->
 
@@ -396,6 +394,8 @@
 // ──────────────────────────────────────────
 // 유틸
 // ──────────────────────────────────────────
+let hasPCR = false;  // CSV에 풋콜_비율 유효 데이터가 있을 때만 true
+
 const GRADE_MAP = {
   "극단적 공포": { cls: "c-ef", bgCls: "bg-ef", hex: "#d32f2f" },
   "공포":        { cls: "c-f",  bgCls: "bg-f",  hex: "#f57c00" },
@@ -531,6 +531,7 @@ function renderFactorBars(row) {
   const container = document.getElementById("factorBars");
   container.innerHTML = "";
   Object.keys(FACTOR_LABELS).forEach(key => {
+    if (key === "풋콜_비율" && !hasPCR) return;  // 데이터 없으면 바 표시 안 함
     const val = parseFloat(row[key]);
     const color = scoreColor(val);
     const label = FACTOR_LABELS[key];
@@ -673,7 +674,7 @@ function renderTable(rows) {
       <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
+      <td class="pcr-col" style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
       <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
       <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
       <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>
@@ -697,6 +698,17 @@ function renderAll(text) {
   const score  = parseFloat(latest["K_탐욕공포지수"]);
   const grade  = latest["등급"] || "—";
   const ginfo  = GRADE_MAP[grade] || { cls: "", hex: "#8b949e" };
+
+  // PCR 데이터 존재 여부 확인 → UI 동적 제어
+  hasPCR = rows.some(r => r["풋콜_비율"] && !isNaN(parseFloat(r["풋콜_비율"])));
+  const table = document.getElementById("recentTable");
+  if (hasPCR) {
+    table.classList.remove("hide-pcr");
+    const pcrItem = document.getElementById("pcrDescItem");
+    if (pcrItem) { pcrItem.classList.remove("excluded"); pcrItem.querySelector("dd").textContent = "KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향)"; }
+  } else {
+    table.classList.add("hide-pcr");
+  }
 
   drawGauge(score);
   const scoreEl = document.getElementById("gaugeScore");
