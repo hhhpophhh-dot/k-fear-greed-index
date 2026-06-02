@@ -29,15 +29,16 @@
     }
 
     header {
-      padding: 24px 32px 0;
+      padding: 20px 24px;
       border-bottom: 1px solid var(--border);
       display: flex;
-      align-items: baseline;
-      gap: 12px;
-      padding-bottom: 20px;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      overflow: hidden;
     }
-    header h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.3px; }
-    header .subtitle { font-size: 0.8rem; color: var(--muted); }
+    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.3px; flex-shrink: 0; }
+    header .subtitle { font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 
     .main {
       max-width: 1100px;
@@ -108,9 +109,12 @@
     .factor-row { margin-bottom: 14px; }
     .factor-row:last-child { margin-bottom: 0; }
     .factor-hl {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       color: var(--muted);
-      margin-top: 4px;
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .factor-hl .hl-hi { color: #1565c0; }
     .factor-hl .hl-lo { color: #d32f2f; }
@@ -123,10 +127,10 @@
       letter-spacing: 0.5px;
       margin-bottom: 16px;
     }
-    .desc-list { display: flex; flex-direction: column; gap: 10px; }
-    .desc-item { display: grid; grid-template-columns: 110px 1fr; gap: 8px; font-size: 0.82rem; }
-    .desc-item dt { color: var(--text); font-weight: 600; padding-top: 1px; }
-    .desc-item dd { color: var(--muted); line-height: 1.5; }
+    .desc-list { display: flex; flex-direction: column; gap: 8px; }
+    .desc-item { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; white-space: nowrap; overflow: hidden; }
+    .desc-item dt { color: var(--text); font-weight: 600; flex-shrink: 0; min-width: 80px; }
+    .desc-item dd { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .desc-item.excluded { opacity: 0.45; }
     .desc-item.excluded dt { text-decoration: line-through; }
     .desc-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
