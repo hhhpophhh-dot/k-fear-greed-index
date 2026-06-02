@@ -36,7 +36,8 @@ warnings.filterwarnings('ignore')
 # ============================================================
 # ⚙️ 설정
 # ============================================================
-ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "X2QOJYHO80BJKPBF1ODJ")
+ECOS_API_KEY    = os.environ.get("ECOS_API_KEY", "X2QOJYHO80BJKPBF1ODJ")
+CNN_FNG_URL     = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
 LOOKBACK_DAYS = 252                        # 정규화 기준 기간 (약 1년 거래일)
 CUTOFF_HOUR   = 17                         # 데이터 기준일 전환 시각 (17:00 이후 = 당일)
 
@@ -446,6 +447,22 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
 # ============================================================
 # ▶️ 실행 진입점
 # ============================================================
+def fetch_cnn_fear_greed():
+    """CNN Fear & Greed Index 현재값 조회 (비공식 엔드포인트, 실패 시 None 반환)"""
+    try:
+        resp = requests.get(CNN_FNG_URL, timeout=10,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        fng = resp.json()["fear_and_greed"]
+        score  = round(float(fng["score"]), 1)
+        rating = fng["rating"]
+        print(f"[CNN] Fear & Greed: {score} ({rating})")
+        return score, rating
+    except Exception as e:
+        print(f"[CNN] 데이터 조회 실패: {e}")
+        return None, None
+
+
 if __name__ == "__main__":
     result_df = calc_k_fear_greed_index()
 
@@ -456,6 +473,14 @@ if __name__ == "__main__":
         "K_탐욕공포지수", "등급",
     ]
     print(result_df[factor_cols].tail(10).to_string())
+
+    # CNN Fear & Greed Index 조회 → 최신 행에 저장
+    cnn_score, cnn_rating = fetch_cnn_fear_greed()
+    result_df["CNN_탐욕공포지수"] = np.nan
+    result_df["CNN_등급"] = ""
+    if cnn_score is not None:
+        result_df.loc[result_df.index[-1], "CNN_탐욕공포지수"] = cnn_score
+        result_df.loc[result_df.index[-1], "CNN_등급"] = cnn_rating
 
     # 날짜 컬럼명 명시 + 6개 인자 모두 유효한 행만 저장 (HTML 시각화 호환)
     output_path = "k_fear_greed_result.csv"

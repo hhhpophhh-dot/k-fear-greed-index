@@ -85,6 +85,16 @@
       margin-top: 4px;
     }
     .gauge-date { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+    .cnn-compare {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      margin-top: 12px; padding: 8px 14px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.8rem; color: var(--muted);
+    }
+    .cnn-compare .cnn-score {
+      font-size: 1.25rem; font-weight: 700; color: var(--text);
+    }
+    .cnn-compare .cnn-label { font-size: 0.72rem; }
 
     /* 인자별 바 */
     .factors-card {}
@@ -264,6 +274,11 @@
       </div>
       <div class="gauge-date" id="gaugeDate">—</div>
       <div class="gauge-date" id="gaugeUpdated" style="margin-top:2px;"></div>
+      <div class="cnn-compare" id="cnnCompare" style="display:none;">
+        <span class="cnn-label">CNN Fear &amp; Greed</span>
+        <span class="cnn-score" id="cnnScore">—</span>
+        <span id="cnnRating" style="color:var(--text);font-weight:600;"></span>
+      </div>
     </div>
 
     <!-- 인자별 바 -->
@@ -656,6 +671,14 @@ function renderAll(text) {
   const updatedEl = document.getElementById("gaugeUpdated");
   const updTime = latest["업데이트_시각"];
   updatedEl.textContent = updTime ? `(업데이트: ${updTime} KST)` : "";
+
+  const cnnScore = parseFloat(latest["CNN_탐욕공포지수"]);
+  const cnnRating = latest["CNN_등급"] || "";
+  if (!isNaN(cnnScore) && cnnRating) {
+    document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
+    document.getElementById("cnnRating").textContent = cnnRating;
+    document.getElementById("cnnCompare").style.display = "flex";
+  }
 
   renderFactorBars(latest);
   renderHistoryChart(rows.slice(-60));   // 최근 60일만 표시
