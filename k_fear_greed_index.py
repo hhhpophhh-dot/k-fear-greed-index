@@ -126,6 +126,80 @@ def get_kospi_close() -> pd.Series:
     return df["Close"].astype(float)
 
 
+def get_naver_kospi100_close() -> pd.Series:
+    """
+    네이버 금융 모바일 API로 KOSPI100 지수 종가 시계열 반환.
+
+    FDR이 KOSPI100 심볼을 미지원하므로 네이버 금융 API를 직접 호출.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://finance.naver.com",
+        "Accept": "application/json, text/plain, */*",
+    }
+    url    = "https://m.stock.naver.com/api/index/KOSPI100/price"
+    params = {
+        "startTime": DATA_START_FDR.replace("-", ""),
+        "endTime":   TODAY_FDR.replace("-", ""),
+        "timeframe": "day",
+    }
+    resp = requests.get(url, params=params, headers=headers, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+
+    items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", []))
+    if not items:
+        raise ValueError("KOSPI100 API 응답 비어있음")
+
+    print(f"  [진단] KOSPI100 API 응답 키: {list(items[0].keys())}")
+    records = []
+    for item in items:
+        date_str  = item.get("localTradedAt") or item.get("date") or item.get("dt")
+        close_val = item.get("closePrice")    or item.get("close") or item.get("cls")
+        if date_str and close_val:
+            try:
+                records.append({
+                    "date":  pd.to_datetime(str(date_str)[:10]),
+                    "close": float(str(close_val).replace(",", "")),
+                })
+            except Exception:
+                pass
+
+    if len(records) < 20:
+        raise ValueError(f"KOSPI100 데이터 부족 ({len(records)}개). API 응답 구조 확인 필요")
+
+    df = pd.DataFrame(records).set_index("date").sort_index()
+    print(f"  KOSPI100 종가 수집 완료: {len(df)}일치")
+    return df["close"]
+
+
+def get_kospi100_tickers() -> list:
+    """
+    FDR StockListing('KOSPI')에서 시가총액 상위 100개 종목 코드 반환.
+
+    KRX 공식 KOSPI100 구성 종목(반기 갱신)과 완전히 일치하지 않으나,
+    시총 상위 100종목이 공식 구성과 80~90% 이상 겹쳐 실용적 대체재로 사용.
+    """
+    kospi_list = fdr.StockListing("KOSPI")
+    # 시가총액 컬럼 탐색 (FDR 버전별 컬럼명 상이)
+    marcap_col = next(
+        (c for c in kospi_list.columns if c.lower() in ("marcap", "mktcap", "marketcap", "cap")),
+        None
+    )
+    if marcap_col is None:
+        raise ValueError(f"시가총액 컬럼 없음. 컬럼 목록: {list(kospi_list.columns)}")
+
+    top100 = (
+        kospi_list.dropna(subset=[marcap_col])
+        .nlargest(100, marcap_col)["Code"]
+        .tolist()
+    )
+    return top100
+
+
 # ============================================================
 # 📦 KOSPI 전 종목 데이터 캐시 (주가강도 + 주가폭 공용)
 # ============================================================
@@ -184,18 +258,16 @@ def get_kospi_stock_data() -> dict:
 # ============================================================
 # 📊 인자 1: 주가 모멘텀 (Price Momentum)
 # ============================================================
-def calc_price_momentum() -> pd.Series:
+def calc_price_momentum(_close: pd.Series = None) -> pd.Series:
     """
-    KOSPI 종가 vs 125일 이동평균의 이격률(%)
+    KOSPI(또는 KOSPI100) 종가 vs 125일 이동평균의 이격률(%)
 
-    이격률 = (KOSPI 종가 - MA125) / MA125 × 100
+    이격률 = (종가 - MA125) / MA125 × 100
     이격률이 높을수록 탐욕 → invert=False
-
-    데이터: FinanceDataReader KS11 (KRX 로그인 불필요)
     """
     print("[1/7] 주가 모멘텀 계산 중...")
 
-    close = get_kospi_close()
+    close = _close if _close is not None else get_kospi_close()
     ma125 = close.rolling(window=125).mean()
     momentum = (close - ma125) / ma125 * 100
 
@@ -205,20 +277,18 @@ def calc_price_momentum() -> pd.Series:
 # ============================================================
 # 📊 인자 2: 주가 강도 (Price Strength)
 # ============================================================
-def calc_price_strength():
+def calc_price_strength(_stock_data: dict = None):
     """
-    KOSPI 전 종목 중 52주 신고가/신저가 종목 수 비율
+    52주 신고가/신저가 종목 수 비율
 
     비율 = 신고가 종목 수 / (신고가 + 신저가 종목 수)
     비율이 높을수록 탐욕 → invert=False
 
-    데이터: pykrx get_market_ohlcv_by_date (개별 종목, KRX 로그인 불필요)
-
     Returns: (정규화된 시리즈, 신고가_종목수 시리즈, 신저가_종목수 시리즈)
     """
-    print("[2/7] 주가 강도 계산 중 (전 종목 수집, 수분 소요)...")
+    print("[2/7] 주가 강도 계산 중...")
 
-    data = get_kospi_stock_data()
+    data = _stock_data if _stock_data is not None else get_kospi_stock_data()
     close_df = data["close"]
 
     rolling_high = close_df.rolling(window=252).max()
@@ -243,24 +313,20 @@ def calc_price_strength():
 # ============================================================
 # 📊 인자 3: 주가 폭 (McClellan Summation Index, 거래량 기반)
 # ============================================================
-def calc_market_breadth() -> pd.Series:
+def calc_market_breadth(_stock_data: dict = None) -> pd.Series:
     """
     McClellan Summation Index (거래량 기반)
 
-    Step 1. 매일 상승/하락 거래량 집계
-        - 상승 거래량: 등락률 > 0 종목들의 거래량 합
-        - 하락 거래량: 등락률 < 0 종목들의 거래량 합
+    Step 1. 상승/하락 거래량 집계
     Step 2. 순거래량 비율 = (Adv_Vol - Dec_Vol) / (Adv_Vol + Dec_Vol)
     Step 3. McClellan Oscillator = EMA(19) - EMA(39)
     Step 4. McClellan Summation = Oscillator 누적합
 
     높을수록 탐욕 → invert=False
-
-    데이터: pykrx get_market_ohlcv_by_date (종목별 루프, KRX 로그인 불필요)
     """
     print("[3/7] 주가 폭 (McClellan Summation) 계산 중...")
 
-    data = get_kospi_stock_data()
+    data = _stock_data if _stock_data is not None else get_kospi_stock_data()
     vol_df = data["volume"]
     chg_df = data["change"]
 
@@ -416,25 +482,18 @@ def calc_credit_spread() -> pd.Series:
 # ============================================================
 # 📊 인자 6: 시장 변동성 (Realized Volatility as VKOSPI proxy)
 # ============================================================
-def calc_market_volatility() -> pd.Series:
+def calc_market_volatility(_close: pd.Series = None) -> pd.Series:
     """
-    KOSPI 20일 실현 변동성 (연율화, %)
-
-    VKOSPI(한국판 VIX)는 공개 API가 없으므로 KOSPI 일간 수익률의
-    20일 롤링 표준편차를 연율화하여 대리 지표로 사용.
-    실현 변동성은 내재 변동성(VIX계)과 강한 양의 상관관계를 가짐.
+    20일 실현 변동성 (연율화, %, VKOSPI 대체)
 
     실현 변동성 = std(20일 일간 수익률) × sqrt(252) × 100 (%)
-
     높을수록 공포 → invert=True
-
-    데이터: FinanceDataReader KS11 (KRX 로그인 불필요)
     """
-    print("[6/7] 시장 변동성 (실현변동성 - VKOSPI 대체) 계산 중...")
+    print("[6/7] 시장 변동성 (실현변동성) 계산 중...")
 
-    close  = get_kospi_close()
-    ret    = close.pct_change()
-    rv20   = ret.rolling(20).std() * np.sqrt(252) * 100   # 연율화 퍼센트
+    close = _close if _close is not None else get_kospi_close()
+    ret   = close.pct_change()
+    rv20  = ret.rolling(20).std() * np.sqrt(252) * 100
 
     return normalize_series(rv20.dropna(), invert=True)
 
@@ -442,21 +501,16 @@ def calc_market_volatility() -> pd.Series:
 # ============================================================
 # 📊 인자 7: 안전자산 수요 (Safe Haven Demand)
 # ============================================================
-def calc_safe_haven_demand() -> pd.Series:
+def calc_safe_haven_demand(_close: pd.Series = None) -> pd.Series:
     """
-    KOSPI 20일 수익률 - 국고채 3년물 20일 금리 변화
-
-    KOSPI 20일 수익률    = (KOSPI 종가 / 20영업일 전 종가) - 1
-    국고채 20일 금리 Δ   = 현재 금리 - 20영업일 전 금리 (상승 = 채권 가격 하락 → 부호 반전)
+    지수 20일 수익률 - 국고채 3년물 20일 금리 변화
 
     양수: 주식 강세 → 탐욕 / 음수: 채권 강세 → 공포
     높을수록 탐욕 → invert=False
-
-    데이터: FDR KS11 + ECOS API
     """
     print("[7/7] 안전자산 수요 계산 중...")
 
-    kospi_close = get_kospi_close()
+    kospi_close  = _close if _close is not None else get_kospi_close()
     kospi_ret_20 = kospi_close.pct_change(periods=20)
 
     treasury = get_ecos_data("817Y002", "010200000", DATA_START, TODAY)
@@ -476,33 +530,50 @@ def calc_safe_haven_demand() -> pd.Series:
 # ============================================================
 # 🏆 최종 지수 산출
 # ============================================================
-def calc_k_fear_greed_index() -> pd.DataFrame:
+def calc_k_fear_greed_index(universe: str = "all") -> pd.DataFrame:
     """
     6개 인자 각각 0~100 정규화 후 동일가중 평균 → K-탐욕공포지수
 
-    [지수 해석 기준]
-    0  ~ 25: 극단적 공포 (Extreme Fear)
-    25 ~ 45: 공포 (Fear)
-    45 ~ 55: 중립 (Neutral)
-    55 ~ 75: 탐욕 (Greed)
-    75 ~100: 극단적 탐욕 (Extreme Greed)
-    """
-    has_pcr = bool(KRX_AUTH_KEY)
-    print(f"\n=== K-탐욕공포지수 산출 시작 ({'최대 7' if has_pcr else '6'}개 인자) ===\n")
+    universe: 'all'  = KOSPI 전체 (기본)
+              'k100' = KOSPI100 (시가총액 상위 100)
 
-    strength_series, raw_highs, raw_lows = calc_price_strength()
+    [지수 해석 기준]
+    0  ~ 25: 극단적 공포 / 25 ~ 45: 공포 / 45 ~ 55: 중립
+    55 ~ 75: 탐욕 / 75 ~100: 극단적 탐욕
+    """
+    label = "KOSPI100" if universe == "k100" else "KOSPI 전체"
+    has_pcr = bool(KRX_AUTH_KEY) and universe == "all"  # PCR은 전체 지수에만 적용
+    print(f"\n=== K-탐욕공포지수 산출 시작 [{label}] ===\n")
+
+    # ── 데이터 소스 선택 ──
+    if universe == "k100":
+        index_close = get_naver_kospi100_close()
+        tickers_100 = get_kospi100_tickers()
+        all_data    = get_kospi_stock_data()   # 캐시에서 재사용
+        avail       = [t for t in tickers_100 if t in all_data["close"].columns]
+        print(f"  KOSPI100 종목 필터: {len(avail)}개 사용 (요청 100개 중)")
+        stock_data = {
+            "close":  all_data["close"][avail],
+            "volume": all_data["volume"][avail],
+            "change": all_data["change"][avail],
+        }
+    else:
+        index_close = None   # 각 함수에서 기본값(KS11) 사용
+        stock_data  = None   # 각 함수에서 전체 캐시 사용
+
+    strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
     factors = {
-        "주가_모멘텀":   calc_price_momentum(),
+        "주가_모멘텀":   calc_price_momentum(_close=index_close),
         "주가_강도":     strength_series,
-        "주가_폭":       calc_market_breadth(),
+        "주가_폭":       calc_market_breadth(_stock_data=stock_data),
     }
     if has_pcr:
         pcr = calc_put_call_ratio()
         if pcr is not None:
             factors["풋콜_비율"] = pcr
     factors["신용스프레드"]  = calc_credit_spread()
-    factors["시장_변동성"]   = calc_market_volatility()
-    factors["안전자산_수요"] = calc_safe_haven_demand()
+    factors["시장_변동성"]   = calc_market_volatility(_close=index_close)
+    factors["안전자산_수요"] = calc_safe_haven_demand(_close=index_close)
 
     n_factors = len(factors)
     print(f"  실제 사용 인자: {n_factors}개 ({', '.join(factors.keys())})")
@@ -510,7 +581,6 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     result = pd.DataFrame(factors)
     result["신고가_종목수"] = raw_highs.reindex(result.index)
     result["신저가_종목수"] = raw_lows.reindex(result.index)
-    # 인자 컬럼만 평균 (신고가/신저가 원시 카운트 제외)
     result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
 
     def label(score):
@@ -588,18 +658,32 @@ def fetch_cnn_fear_greed():
         return None, None
 
 
-if __name__ == "__main__":
-    result_df = calc_k_fear_greed_index()
+def _save_result(result_df: pd.DataFrame, output_path: str):
+    """결과 DataFrame을 CSV로 저장 (공통 후처리)."""
+    result_df.index.name = "날짜"
+    base_factors = ["주가_모멘텀", "주가_강도", "주가_폭",
+                    "신용스프레드", "시장_변동성", "안전자산_수요"]
+    result_clean = result_df.dropna(subset=base_factors)
+    for col in ["신고가_종목수", "신저가_종목수"]:
+        if col in result_clean.columns:
+            result_clean[col] = result_clean[col].where(
+                result_clean[col].isna(), result_clean[col].astype(int)
+            )
+    result_clean.to_csv(output_path, encoding="utf-8-sig")
+    print(f"결과 저장: {output_path} ({len(result_clean)}행)")
 
-    print("\n[최근 10일 인자별 점수]")
-    factor_cols = [
-        "주가_모멘텀", "주가_강도", "주가_폭",
-        "신용스프레드", "시장_변동성", "안전자산_수요",
-        "K_탐욕공포지수", "등급",
-    ]
+
+if __name__ == "__main__":
+    # ── KOSPI 전체 ──
+    result_df = calc_k_fear_greed_index(universe="all")
+
+    print("\n[최근 10일 인자별 점수 — KOSPI 전체]")
+    factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
+                   "신용스프레드", "시장_변동성", "안전자산_수요",
+                   "K_탐욕공포지수", "등급"]
     print(result_df[factor_cols].tail(10).to_string())
 
-    # CNN Fear & Greed Index 조회 → 최신 행에 저장
+    # CNN Fear & Greed Index 조회 → 전체 지수 최신 행에 저장
     cnn_score, cnn_rating = fetch_cnn_fear_greed()
     result_df["CNN_탐욕공포지수"] = np.nan
     result_df["CNN_등급"] = ""
@@ -607,16 +691,13 @@ if __name__ == "__main__":
         result_df.loc[result_df.index[-1], "CNN_탐욕공포지수"] = cnn_score
         result_df.loc[result_df.index[-1], "CNN_등급"] = cnn_rating
 
-    # 날짜 컬럼명 명시 + 6개 인자 모두 유효한 행만 저장 (HTML 시각화 호환)
-    output_path = "k_fear_greed_result.csv"
-    result_df.index.name = "날짜"
-    factor_col_list = ["주가_모멘텀", "주가_강도", "주가_폭",
-                       "신용스프레드", "시장_변동성", "안전자산_수요"]
-    result_df_clean = result_df.dropna(subset=factor_col_list)
-    # 신고가/신저가 정수 변환 (NaN은 유지)
-    for col in ["신고가_종목수", "신저가_종목수"]:
-        result_df_clean[col] = result_df_clean[col].where(
-            result_df_clean[col].isna(), result_df_clean[col].astype(int)
-        )
-    result_df_clean.to_csv(output_path, encoding="utf-8-sig")
-    print(f"\n결과 저장: {output_path} ({len(result_df_clean)}행)")
+    _save_result(result_df, "k_fear_greed_result.csv")
+
+    # ── KOSPI100 ──
+    try:
+        result_k100 = calc_k_fear_greed_index(universe="k100")
+        print("\n[최근 10일 인자별 점수 — KOSPI100]")
+        print(result_k100[factor_cols].tail(10).to_string())
+        _save_result(result_k100, "k_fear_greed_result_k100.csv")
+    except Exception as e:
+        print(f"\n[경고] KOSPI100 지수 산출 실패 (건너뜀): {e}")
