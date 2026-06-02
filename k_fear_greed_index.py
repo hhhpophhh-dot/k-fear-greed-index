@@ -352,7 +352,8 @@ def calc_put_call_ratio() -> pd.Series:
                 print(f"  [{completed}/{len(date_list)}] 처리 중... (유효 데이터: {len(pc_data)}일)")
 
     if len(pc_data) < 20:
-        raise ValueError(f"풋/콜 비율 데이터 부족 ({len(pc_data)}일). API 응답 필드 확인 필요")
+        print(f"  [경고] 풋/콜 비율 데이터 부족 ({len(pc_data)}일) — IP 화이트리스트 미등록 가능성. 해당 인자 제외하고 계속 진행.")
+        return None
 
     print(f"  수집 완료: {len(pc_data)}일치 P/C 비율")
     return normalize_series(pd.Series(pc_data).sort_index(), invert=True)
@@ -457,8 +458,7 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     75 ~100: 극단적 탐욕 (Extreme Greed)
     """
     has_pcr = bool(KRX_AUTH_KEY)
-    n_factors = 7 if has_pcr else 6
-    print(f"\n=== K-탐욕공포지수 산출 시작 ({n_factors}개 인자) ===\n")
+    print(f"\n=== K-탐욕공포지수 산출 시작 ({'최대 7' if has_pcr else '6'}개 인자) ===\n")
 
     strength_series, raw_highs, raw_lows = calc_price_strength()
     factors = {
@@ -467,10 +467,15 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
         "주가_폭":       calc_market_breadth(),
     }
     if has_pcr:
-        factors["풋콜_비율"] = calc_put_call_ratio()
+        pcr = calc_put_call_ratio()
+        if pcr is not None:
+            factors["풋콜_비율"] = pcr
     factors["신용스프레드"]  = calc_credit_spread()
     factors["시장_변동성"]   = calc_market_volatility()
     factors["안전자산_수요"] = calc_safe_haven_demand()
+
+    n_factors = len(factors)
+    print(f"  실제 사용 인자: {n_factors}개 ({', '.join(factors.keys())})")
 
     result = pd.DataFrame(factors)
     result["신고가_종목수"] = raw_highs.reindex(result.index)
