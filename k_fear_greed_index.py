@@ -437,11 +437,12 @@ def calc_put_call_ratio() -> pd.Series:
         print(f"  신규 수집 완료: {len(new_data)}일")
         pcr_cache.update(new_data)
 
-        # ── 캐시 저장 (목표 기간 외 오래된 데이터는 정리) ──
-        cache_series = pd.Series(pcr_cache).sort_index()
-        cutoff = pd.Timestamp(pcr_start)
-        cache_series = cache_series[cache_series.index >= cutoff]
-        cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
+        # ── 캐시 저장 (데이터가 있을 때만, 오래된 데이터 정리) ──
+        if pcr_cache:
+            cache_series = pd.Series(pcr_cache).sort_index()
+            cutoff = pd.Timestamp(pcr_start)
+            cache_series = cache_series[cache_series.index >= cutoff]
+            cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
         print(f"  캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
 
     # ── 목표 기간 내 데이터로 정규화 ──
