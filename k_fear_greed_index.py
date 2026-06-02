@@ -443,7 +443,9 @@ def calc_put_call_ratio() -> pd.Series:
             cutoff = pd.Timestamp(pcr_start)
             cache_series = cache_series[cache_series.index >= cutoff]
             cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
-        print(f"  캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
+            print(f"  캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
+        else:
+            print(f"  캐시 저장 건너뜀: 데이터 없음")
 
     # ── 목표 기간 내 데이터로 정규화 ──
     available = {k: v for k, v in pcr_cache.items()
