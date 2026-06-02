@@ -12,6 +12,7 @@
 ## 현재 상황
 GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 배포 URL: https://hhhpophhh-dot.github.io/k-fear-greed-index/
+KOSPI100 탭 추가 작업 완료 (2026-06-02), 워크플로우 실행 중 (결과 미확인)
 
 ## 이미 결정된 사항
 - 결정 1: 산출 주기 = 종가 기준 1일 1회 (이유: 실시간 데이터 수집 어려움, KOSPI 장 마감 15:30 이후 산출)
@@ -208,3 +209,21 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - 데이터 부족 시 graceful fallback: 경고 출력 후 6개 인자로 계속 실행
   - 워크플로우에서 `pcr_raw_data.csv`도 git commit 대상에 추가
 - 현황: 내일(2026-06-03) 일일 한도 리셋 후 첫 캐시 수집 예정. 성공 시 7개 인자로 전환
+- 추가 버그: 빈 dict → pd.Series 시 RangeIndex 생성 → Timestamp 비교 TypeError → `if pcr_cache:` 조건으로 수정
+
+[Sub 13 - KOSPI100 탭 추가 (2026-06-02)]
+- 결정: 지수 시계열 = 네이버 금융 모바일 API (C안), 구성 종목 = FDR 시가총액 상위 100개 (A안)
+- 구현 내용
+  - `get_naver_kospi100_close()`: `m.stock.naver.com/api/index/KOSPI100/price` 호출, JSON 파싱
+  - `get_kospi100_tickers()`: FDR StockListing('KOSPI')에서 Marcap 상위 100개 필터링
+  - `calc_k_fear_greed_index(universe)`: `universe='all'`(KOSPI 전체) / `universe='k100'`(KOSPI100) 파라미터 추가
+    - 각 calc 함수에 `_close`, `_stock_data` 옵션 파라미터 추가 → 기본값은 기존 동작 유지
+    - 전 종목 캐시(_kospi_stock_cache) 공유 → KOSPI100은 추가 수집 없이 필터링만
+    - KOSPI100 실패 시 graceful fallback (전체 지수 저장은 영향 없음)
+  - `_save_result()` 헬퍼 함수로 CSV 저장 로직 공통화
+  - 출력 파일: `k_fear_greed_result_k100.csv` 별도 생성
+- index.html: 탭 UI 추가 (KOSPI 전체 / KOSPI 100 버튼), 탭 전환 시 해당 CSV 자동 로드
+- update.yml: `k_fear_greed_result_k100.csv` git commit 대상 추가
+- 현황: 워크플로우 실행 중 (네이버 API 응답 구조 첫 실행 시 로그 출력 예정)
+  - 주의: 네이버 API 응답 키가 예상(`localTradedAt`, `closePrice`)과 다를 경우 수정 필요
+  - 풋/콜 비율은 여전히 KRX API 한도 소진으로 fallback(6인자) 동작 예정
