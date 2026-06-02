@@ -17,17 +17,20 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - 사유: pykrx 1.2.8 업그레이드로 지수 API(get_index_ohlcv_by_date 등)는 KRX 로그인 필수가 됨
   - 개별 종목 API(get_market_ohlcv_by_date)는 로그인 없이 여전히 작동 → 유지
   - KOSPI 지수 시계열, 종목 목록: FinanceDataReader(FDR)로 대체
-- 결정 5: 풋/콜 비율 인자 제외 → 6개 인자로 운영 확정
-  - 사유: pykrx 옵션 함수 없음 / KRX 포털 API(data.krx.co.kr)는 브라우저 세션 쿠키 필요(400 LOGOUT) → 공개 API로 수집 불가
+- 결정 5: 풋/콜 비율 = KRX Open API(openapi.krx.co.kr)로 추가 시도 중 (Sub 12)
+  - 데이터 수집: pykrx-openapi 라이브러리, `get_options_daily_trade()` → OutBlock_1
+  - 캐시 방식: pcr_raw_data.csv에 원시 P/C 비율 저장, 신규 날짜만 API 호출
+  - 현황: KRX Open API 일일 호출 한도(1,000~2,000회) 초과로 아직 미작동. 다음 실행 대기 중
+  - Fallback: 데이터 부족 시 6개 인자로 자동 계속 실행
 
-## K-탐욕공포지수 인자 확정 (6개) — 최종
+## K-탐욕공포지수 인자 (6+1개 목표)
 
 | 인자 | 대체 지표 | 수집 방법 | 비고 |
 |------|-----------|-----------|------|
 | 주가 모멘텀 | KOSPI 종가 vs 125일 MA | **FDR (KS11)** | pykrx 지수 API 로그인 필요로 FDR 대체 |
 | 주가 강도 | 52주 신고가/신저가 종목 수 비율 | **FDR 종목목록 + pykrx 개별 종목** | 종목 목록: FDR StockListing / OHLCV: pykrx (로그인 불필요) |
 | 주가 폭 | McClellan Summation Index (거래량 기반) | **pykrx 개별 종목 루프** | 날짜별 전체 API 폐쇄 → 종목별 루프로 전환, 동일 데이터 재사용 |
-| ~~풋/콜 비율~~ | ~~KOSPI200 옵션 P/C 비율~~ | ~~수집 불가~~ | ❌ 제외 확정 |
+| 풋/콜 비율 | KOSPI200 옵션 P/C 비율 | **KRX Open API (pykrx-openapi)** | 캐시(pcr_raw_data.csv) 도입, 한도 소진 시 인자 제외 fallback |
 | 신용스프레드 | 회사채 BBB- 3년물 - 국고채 3년물 | 한국은행 ECOS API | 항목코드: 국고채 010200000 / BBB- 010320000 |
 | 시장 변동성 | ~~VKOSPI~~ → **KOSPI 20일 실현변동성** | **FDR (KS11)** | VKOSPI 공개 API 없음 → std(20일 수익률)×√252×100 으로 대체 |
 | 안전자산 수요 | KOSPI 20일 수익률 - 국고채 3년물 20일 금리변화 | **FDR (KS11) + ECOS API** | pykrx 지수 API 폐쇄 → FDR 대체 |
@@ -170,6 +173,10 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 - index.html: 기준일 표시 아래 `(업데이트: HH:MM KST)` 추가
 - 하단 인자 설명 카드에 풋/콜 비율 항목 추가 (취소선 + 회색 처리)
   - 내용: "KRX 옵션 데이터 API가 브라우저 세션 인증을 요구해 공개 수집 불가"
+- Python 스크립트 실행 시각(KST HH:MM)을 CSV 최신 행 `업데이트_시각` 컬럼에 기록
+- index.html: 기준일 표시 아래 `(업데이트: HH:MM KST)` 추가
+- 하단 인자 설명 카드에 풋/콜 비율 항목 추가 (취소선 + 회색 처리)
+  - 내용: "KRX 옵션 데이터 API가 브라우저 세션 인증을 요구해 공개 수집 불가"
 
 [Sub 11 - CNN Fear & Greed Index 비교 위젯 추가 (2026-06-02)]
 - Python: CNN 비공식 API(production.dataviz.cnn.io/index/fearandgreed/graphdata)에서 현재값 조회
@@ -183,3 +190,17 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - 헤더: white-space:nowrap + h1 크기 축소(1.35→1.1rem), 부제목 ellipsis
   - 신고가/신저가 라인: 글자 축소(0.68rem) + white-space:nowrap
   - 인자 설명 카드: grid→flex 전환, dd는 ellipsis
+
+[Sub 12 - 풋/콜 비율 인자 추가 시도 및 작업 중 (2026-06-02)]
+- KRX Open API(openapi.krx.co.kr) 방식으로 풋/콜 비율 재추가 시도
+  - pykrx-openapi 라이브러리 사용: `get_options_daily_trade(bas_dd)` → OutBlock_1
+  - 인증: AUTH_KEY 헤더 (브라우저 세션 불필요) → GitHub Secret KRX_AUTH_KEY 등록
+- 발생한 문제들
+  1. K-지수 계산 버그: `result.mean(axis=1)`이 신고가/신저가 원시 카운트도 평균에 포함 → `result[list(factors.keys())].mean()`으로 수정
+  2. 순차 API 호출 60분 타임아웃: 400일 × 9초 → 4 병렬 워커(ThreadPoolExecutor)로 전환
+  3. KRX Open API 일일 호출 한도 초과: 오늘 3회 실행 × ~400회 = ~1,200회 → 한도(1,000~2,000회) 소진 후 빈 응답
+- 최종 구조
+  - `pcr_raw_data.csv` 캐시 도입: 최초 1회 전체 수집, 이후 신규 날짜(1~2회/일)만 호출
+  - 데이터 부족 시 graceful fallback: 경고 출력 후 6개 인자로 계속 실행
+  - 워크플로우에서 `pcr_raw_data.csv`도 git commit 대상에 추가
+- 현황: 내일(2026-06-03) 일일 한도 리셋 후 첫 캐시 수집 예정. 성공 시 7개 인자로 전환
