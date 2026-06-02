@@ -466,7 +466,8 @@ def calc_k_fear_greed_index() -> pd.DataFrame:
     result = pd.DataFrame(factors)
     result["신고가_종목수"] = raw_highs.reindex(result.index)
     result["신저가_종목수"] = raw_lows.reindex(result.index)
-    result["K_탐욕공포지수"] = result.mean(axis=1, skipna=True)
+    # 인자 컬럼만 평균 (신고가/신저가 원시 카운트 제외)
+    result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
 
     def label(score):
         if pd.isna(score):  return "데이터 없음"
