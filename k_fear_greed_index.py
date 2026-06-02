@@ -131,7 +131,8 @@ def get_naver_kospi100_close() -> pd.Series:
     네이버 금융 모바일 API로 KOSPI100 지수 종가 시계열 반환.
 
     FDR이 KOSPI100 심볼을 미지원하므로 네이버 금융 API를 직접 호출.
-    3년치 단일 요청 시 409 오류 발생 → 1년 단위 청크로 분할 요청.
+    3년치 요청 시 409 → KOSPI100 전용으로 최근 2년만 요청 + 90일 청크 분할.
+    정규화에 252일 필요하므로 2년(약 500거래일)으로 충분.
     """
     headers = {
         "User-Agent": (
@@ -143,8 +144,10 @@ def get_naver_kospi100_close() -> pd.Series:
     }
     url = "https://m.stock.naver.com/api/index/KOSPI100/price"
 
-    # 1년 단위 청크로 분할 요청 (단일 3년 요청 시 409)
-    start_dt = datetime.strptime(DATA_START_FDR, "%Y-%m-%d")
+    # KOSPI100 전용: 최근 2년만 요청 (3년 이상은 409 오류)
+    # 정규화 기준 252일보다 넉넉하게 2년(~500거래일) 확보
+    k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
+    start_dt = datetime.strptime(k100_start, "%Y-%m-%d")
     end_dt   = datetime.strptime(TODAY_FDR, "%Y-%m-%d")
     all_items = []
     first_chunk = True
