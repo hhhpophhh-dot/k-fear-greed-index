@@ -333,11 +333,12 @@ def calc_put_call_ratio() -> pd.Series:
             rows = result.get("OutBlock_1", [])
             if not rows:
                 return None, rows
-            k200 = [r for r in rows if "KOSPI200" in str(r.get("itmNm", ""))]
+            # 실제 API 필드: PROD_NM, RGHT_TP_NM, ACC_TRDVOL (camelCase 아님)
+            k200 = [r for r in rows if "KOSPI200" in str(r.get("PROD_NM", "")) or "KOSPI200" in str(r.get("ISU_NM", ""))]
             if not k200:
                 k200 = rows
-            call_vol = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "C")
-            put_vol  = sum(int(r.get("acmlTrdvol", 0) or 0) for r in k200 if r.get("rghtTpCd") == "P")
+            call_vol = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if "콜" in str(r.get("RGHT_TP_NM", "")))
+            put_vol  = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if "풋" in str(r.get("RGHT_TP_NM", "")))
             ratio = put_vol / call_vol if call_vol > 0 else None
             return ratio, rows
 
@@ -347,11 +348,9 @@ def calc_put_call_ratio() -> pd.Series:
         PCR_ABORT_THRESHOLD = 10   # 연속 빈 응답 N회 → API 한도 소진으로 판단하고 중단
         PCR_BATCH_SIZE      = 50   # 배치당 요청 수
         PCR_BATCH_DELAY     = 15   # 배치 간 대기 시간(초)
-        PCR_TEST_BATCHES    = 1    # [테스트] 이 배치 수만 실행 후 중단 (전체 실행 시 제거)
 
         # missing 날짜를 50개씩 배치로 분할
         batches = [missing[i:i + PCR_BATCH_SIZE] for i in range(0, len(missing), PCR_BATCH_SIZE)]
-        batches = batches[:PCR_TEST_BATCHES]  # [테스트] 1배치만
         total_batches = len(batches)
         print(f"  배치 수집 시작: {total_batches}배치 × 최대 {PCR_BATCH_SIZE}건 (배치 간 {PCR_BATCH_DELAY}초 대기)")
 
