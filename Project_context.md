@@ -27,7 +27,7 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 
 **현재 미해결 과제 (각 세션에서 별도 진행)**
 - K지수 (`update_k.yml`): 풋/콜 비율 API (KRX OpenAPI) 정상화 — pcr_raw_data.csv 최초 수집 필요
-- K100지수 (`update_k100.yml`): KOSPI100 지수 시계열 API 미확보 (네이버 모바일/PC, Stooq 모두 실패)
+- K100지수 (`update_k100.yml`): KOSPI100 지수 시계열 API 미확보 → 해결 방안 탐색 중 (아래 세션 참고)
 
 ## 이미 결정된 사항
 - 결정 1: 산출 주기 = 종가 기준 1일 1회 (이유: 실시간 데이터 수집 어려움, KOSPI 장 마감 15:30 이후 산출)
@@ -255,6 +255,18 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - update_k.yml: 수동 전용, K지수만 (timeout 30분)
   - update_k100.yml: 수동 전용, K100지수만 (timeout 30분)
 - 이후 K지수/K100지수 개선 작업은 세션 분리하여 별도 진행
+
+[Sub 18 - KOSPI100 지수 시계열 해결 방안 탐색 (2026-06-03)]
+- 이 세션 목표: K100 지수에 필요한 KOSPI100 지수 시계열 API 확보
+- 후보 방안 우선순위
+  - B안(1순위): KRX OpenAPI `get_kospi_daily_trade` (idx/kospi_dd_trd) — "KOSPI 시리즈" 엔드포인트로 KOSPI100 포함 가능성 높음
+    - KRX_AUTH_KEY 이미 GitHub Secret에 등록됨
+    - 이 컨테이너 환경에서는 data-dbg.krx.co.kr 도메인 전면 차단 → GitHub Actions에서만 테스트 가능
+    - 응답에 KOSPI100이 포함되면 캐시 방식(k100_index_cache.csv)으로 수집 확정
+  - A안(2순위): 구성 종목 100개 종가에서 시총 가중 합성 지수 직접 계산
+    - 이미 수집하는 stock_data["close"] 활용, 외부 API 완전 독립
+    - 분기 리밸런싱 미반영 오차 존재하나 수익률 기반 계산이므로 실용적
+- 결정: B안 먼저 GitHub Actions 진단 실행으로 검증 → 실패 시 A안 구현
 
 [Sub 16 - KOSPI100 지수 API 대안 탐색 및 보류 (2026-06-03)]
 - 네이버 모바일 API(m.stock.naver.com): 3년/2년/90일 청크 모두 409 → GitHub Actions IP 차단 추정

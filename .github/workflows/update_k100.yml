@@ -24,6 +24,35 @@ jobs:
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
+      - name: KRX OpenAPI KOSPI 시리즈 응답 구조 진단
+        env:
+          KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import os, json
+          from pykrx_openapi import KRXOpenAPI
+          auth_key = os.environ.get("KRX_AUTH_KEY", "")
+          if not auth_key:
+              print("[진단] KRX_AUTH_KEY 없음 — 건너뜀")
+          else:
+              try:
+                  api = KRXOpenAPI(api_key=auth_key)
+                  result = api.get_kospi_daily_trade("20260530")
+                  records = result.get("OutBlock_1", [])
+                  print(f"[진단] 응답 레코드 수: {len(records)}")
+                  if records:
+                      print(f"[진단] 필드 목록: {list(records[0].keys())}")
+                      # 지수명 필드 찾기
+                      for r in records[:5]:
+                          print(f"  {r}")
+                      # KOSPI100 포함 여부 확인
+                      idx_names = [str(r.get(k,"")) for r in records for k in r if "nm" in k.lower() or "name" in k.lower() or "idx" in k.lower()]
+                      k100_found = any("100" in v or "KOSPI100" in v for v in idx_names)
+                      print(f"[진단] KOSPI100 포함 여부: {k100_found}")
+              except Exception as e:
+                  print(f"[진단] KRX OpenAPI 오류: {e}")
+          EOF
+
       - name: K100-탐욕공포지수 산출 (KOSPI100)
         env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
