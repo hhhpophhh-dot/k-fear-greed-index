@@ -392,7 +392,7 @@ def calc_put_call_ratio() -> pd.Series:
             total_so_far = len(new_data)
             print(f"  배치 [{batch_idx}/{total_batches}] 완료 — 소요 {elapsed:.0f}초, 누적 유효 {total_so_far}일")
 
-            # 배치마다 캐시 중간 저장 (중단 시 진행분 보존)
+            # 배치마다 캐시 저장 + git push (중단 시 진행분 보존)
             pcr_cache.update(new_data)
             if pcr_cache:
                 cache_series = pd.Series(pcr_cache).sort_index()
@@ -400,6 +400,16 @@ def calc_put_call_ratio() -> pd.Series:
                 cache_series = cache_series[cache_series.index >= cutoff]
                 cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
                 print(f"  중간 캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
+                import subprocess as _sp
+                _sp.run(["git", "add", PCR_CACHE_PATH], check=False)
+                result = _sp.run(
+                    ["git", "commit", "-m", f"PCR 캐시 중간 저장: 배치 {batch_idx}/{total_batches} ({len(cache_series)}일)"],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
+                    _sp.run(["git", "push", "origin", "main"], check=False)
+                    print(f"  git push 완료: 배치 {batch_idx}/{total_batches}")
 
             # 마지막 배치가 아니면 대기
             if batch_idx < total_batches and not aborted:
