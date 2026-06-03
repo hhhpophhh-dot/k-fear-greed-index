@@ -346,7 +346,7 @@ def calc_put_call_ratio() -> pd.Series:
 
         PCR_ABORT_THRESHOLD = 10   # 연속 빈 응답 N회 → API 한도 소진으로 판단하고 중단
         PCR_BATCH_SIZE      = 50   # 배치당 요청 수
-        PCR_BATCH_DELAY     = 30   # 배치 간 대기 시간(초)
+        PCR_BATCH_DELAY     = 15   # 배치 간 대기 시간(초)
 
         # missing 날짜를 50개씩 배치로 분할
         batches = [missing[i:i + PCR_BATCH_SIZE] for i in range(0, len(missing), PCR_BATCH_SIZE)]
