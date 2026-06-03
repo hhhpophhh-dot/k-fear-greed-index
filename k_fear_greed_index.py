@@ -337,8 +337,9 @@ def calc_put_call_ratio() -> pd.Series:
             k200 = [r for r in rows if "KOSPI200" in str(r.get("PROD_NM", "")) or "KOSPI200" in str(r.get("ISU_NM", ""))]
             if not k200:
                 k200 = rows
-            call_vol = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if "콜" in str(r.get("RGHT_TP_NM", "")))
-            put_vol  = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if "풋" in str(r.get("RGHT_TP_NM", "")))
+            # RGHT_TP_NM 실제 값: API 스펙상 "CALL"/"PUT" (영어)
+            call_vol = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if str(r.get("RGHT_TP_NM", "")).upper() in ("CALL", "콜"))
+            put_vol  = sum(int(r.get("ACC_TRDVOL", 0) or 0) for r in k200 if str(r.get("RGHT_TP_NM", "")).upper() in ("PUT", "풋"))
             ratio = put_vol / call_vol if call_vol > 0 else None
             return ratio, rows
 
@@ -376,6 +377,8 @@ def calc_put_call_ratio() -> pd.Series:
                         ratio, rows = future.result(timeout=30)
                         if not first_row_printed and rows:
                             print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
+                            rght_vals = list({r.get("RGHT_TP_NM") for r in rows[:20]})
+                            print(f"  [진단] RGHT_TP_NM 샘플값: {rght_vals}")
                             first_row_printed = True
                         if rows:
                             consecutive_empty = 0
