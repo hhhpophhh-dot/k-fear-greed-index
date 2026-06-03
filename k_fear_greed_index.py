@@ -126,124 +126,6 @@ def get_kospi_close() -> pd.Series:
     return df["Close"].astype(float)
 
 
-def _fetch_kospi100_from_naver(start_dt, end_dt) -> list:
-    """
-    네이버 금융 PC API (fchart)로 KOSPI100 종가 수집 시도.
-    모바일 API(m.stock.naver.com) 409 이슈로 PC API로 대체.
-    실패 시 빈 리스트 반환.
-    """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://finance.naver.com/sise/sise_index.nhn?code=KOSPI100",
-        "Accept": "application/json, */*",
-    }
-
-    # PC API: 날짜 범위 조회 엔드포인트
-    url = "https://api.stock.naver.com/index/KOSPI100/basicIndicesByTradedAt"
-    params = {
-        "startTradedAt": start_dt.strftime("%Y-%m-%d"),
-        "endTradedAt":   end_dt.strftime("%Y-%m-%d"),
-    }
-    resp = requests.get(url, params=params, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-    items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", data.get("indices", [])))
-    print(f"  [진단] 네이버 PC API 응답: {len(items)}건, 키: {list(items[0].keys()) if items else '없음'}")
-    return items
-
-
-def _fetch_kospi100_from_stooq() -> pd.Series:
-    """
-    Stooq(FDR 경유)로 KOSPI100 종가 수집 시도.
-    심볼: ^ksp100 또는 KSP100.PL 등 시도.
-    실패 시 ValueError 발생.
-    """
-    k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
-    for sym in ["^ksp100", "KSP100.PL", "KS100.WA"]:
-        try:
-            df = fdr.DataReader(sym, k100_start, TODAY_FDR)
-            if len(df) > 100 and "Close" in df.columns:
-                print(f"  Stooq KOSPI100 수집 성공 (심볼: {sym}): {len(df)}일")
-                return df["Close"].astype(float)
-        except Exception:
-            continue
-    raise ValueError("Stooq KOSPI100 수집 실패 (모든 심볼 시도)")
-
-
-def get_naver_kospi100_close() -> pd.Series:
-    """
-    KOSPI100 지수 종가 시계열 반환.
-
-    우선순위:
-    1. 네이버 금융 PC API (api.stock.naver.com)
-    2. Stooq (FDR 경유)
-    둘 다 실패 시 ValueError 발생 → 호출부에서 graceful fallback 처리.
-    """
-    k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
-    start_dt = datetime.strptime(k100_start, "%Y-%m-%d")
-    end_dt   = datetime.strptime(TODAY_FDR, "%Y-%m-%d")
-
-    # ── 1안: 네이버 PC API ──
-    try:
-        items = _fetch_kospi100_from_naver(start_dt, end_dt)
-    except Exception as e:
-        print(f"  [KOSPI100] 네이버 PC API 실패: {e} → Stooq 시도")
-        return _fetch_kospi100_from_stooq()
-
-    if not items:
-        print("  [KOSPI100] 네이버 PC API 응답 비어있음 → Stooq 시도")
-        return _fetch_kospi100_from_stooq()
-
-    records = []
-    for item in items:
-        date_str  = (item.get("tradedAt") or item.get("localTradedAt")
-                     or item.get("date") or item.get("dt"))
-        close_val = (item.get("closePrice") or item.get("endPrice")
-                     or item.get("close") or item.get("cls"))
-        if date_str and close_val:
-            try:
-                records.append({
-                    "date":  pd.to_datetime(str(date_str)[:10]),
-                    "close": float(str(close_val).replace(",", "")),
-                })
-            except Exception:
-                pass
-
-    if len(records) < 20:
-        print(f"  [KOSPI100] 네이버 PC API 데이터 부족 ({len(records)}개) → Stooq 시도")
-        return _fetch_kospi100_from_stooq()
-
-    df = pd.DataFrame(records).set_index("date").sort_index()
-    df = df[~df.index.duplicated(keep="last")]
-    print(f"  KOSPI100 종가 수집 완료 (네이버 PC API): {len(df)}일치")
-    return df["close"]
-
-
-def get_kospi100_tickers() -> list:
-    """
-    FDR StockListing('KOSPI')에서 시가총액 상위 100개 종목 코드 반환.
-
-    KRX 공식 KOSPI100 구성 종목(반기 갱신)과 완전히 일치하지 않으나,
-    시총 상위 100종목이 공식 구성과 80~90% 이상 겹쳐 실용적 대체재로 사용.
-    """
-    kospi_list = fdr.StockListing("KOSPI")
-    # 시가총액 컬럼 탐색 (FDR 버전별 컬럼명 상이)
-    marcap_col = next(
-        (c for c in kospi_list.columns if c.lower() in ("marcap", "mktcap", "marketcap", "cap")),
-        None
-    )
-    if marcap_col is None:
-        raise ValueError(f"시가총액 컬럼 없음. 컬럼 목록: {list(kospi_list.columns)}")
-
-    top100 = (
-        kospi_list.dropna(subset=[marcap_col])
-        .nlargest(100, marcap_col)["Code"]
-        .tolist()
-    )
-    return top100
 
 
 # ============================================================
@@ -591,48 +473,33 @@ def calc_safe_haven_demand(_close: pd.Series = None) -> pd.Series:
 # ============================================================
 # 🏆 최종 지수 산출
 # ============================================================
-def calc_k_fear_greed_index(universe: str = "all") -> pd.DataFrame:
+def calc_k_fear_greed_index(
+    index_close: pd.Series = None,
+    stock_data: dict = None,
+) -> pd.DataFrame:
     """
-    6개 인자 각각 0~100 정규화 후 동일가중 평균 → K-탐욕공포지수
+    6개 인자(+PCR 캐시 확보 시 7개) 각각 0~100 정규화 후 동일가중 평균 → K-탐욕공포지수
 
-    universe: 'all'  = KOSPI 전체 (기본)
-              'k100' = KOSPI100 (시가총액 상위 100)
+    index_close : KOSPI 종가 시계열 (None이면 KS11 기본값 사용)
+    stock_data  : 종목별 OHLCV dict (None이면 전체 KOSPI 캐시 사용)
 
     [지수 해석 기준]
     0  ~ 25: 극단적 공포 / 25 ~ 45: 공포 / 45 ~ 55: 중립
     55 ~ 75: 탐욕 / 75 ~100: 극단적 탐욕
     """
-    label = "KOSPI100" if universe == "k100" else "KOSPI 전체"
+    print("\n=== K-탐욕공포지수 산출 시작 [KOSPI 전체] ===\n")
 
     # PCR: KRX_AUTH_KEY 있고, 캐시 파일에 유효 데이터 ≥20일 있을 때만 시도
-    # 캐시 미존재(첫 실행) 또는 데이터 부족 → 완전 건너뜀 (API 호출 없음)
     has_pcr = False
-    if bool(KRX_AUTH_KEY) and universe == "all" and os.path.exists(PCR_CACHE_PATH):
+    if bool(KRX_AUTH_KEY) and os.path.exists(PCR_CACHE_PATH):
         try:
             _pcr_df = pd.read_csv(PCR_CACHE_PATH, index_col=0, parse_dates=True,
                                    encoding="utf-8-sig")
             has_pcr = len(_pcr_df.dropna()) >= 20
         except Exception:
             pass
-    if not has_pcr and universe == "all":
+    if not has_pcr:
         print("[4/7] 풋/콜 비율 — 캐시 데이터 없음, 건너뜀 (6인자로 계속)")
-    print(f"\n=== K-탐욕공포지수 산출 시작 [{label}] ===\n")
-
-    # ── 데이터 소스 선택 ──
-    if universe == "k100":
-        index_close = get_naver_kospi100_close()
-        tickers_100 = get_kospi100_tickers()
-        all_data    = get_kospi_stock_data()   # 캐시에서 재사용
-        avail       = [t for t in tickers_100 if t in all_data["close"].columns]
-        print(f"  KOSPI100 종목 필터: {len(avail)}개 사용 (요청 100개 중)")
-        stock_data = {
-            "close":  all_data["close"][avail],
-            "volume": all_data["volume"][avail],
-            "change": all_data["change"][avail],
-        }
-    else:
-        index_close = None   # 각 함수에서 기본값(KS11) 사용
-        stock_data  = None   # 각 함수에서 전체 캐시 사용
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
     factors = {
@@ -747,8 +614,7 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
 
 
 if __name__ == "__main__":
-    # ── KOSPI 전체 ──
-    result_df = calc_k_fear_greed_index(universe="all")
+    result_df = calc_k_fear_greed_index()
 
     print("\n[최근 10일 인자별 점수 — KOSPI 전체]")
     factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
@@ -756,7 +622,6 @@ if __name__ == "__main__":
                    "K_탐욕공포지수", "등급"]
     print(result_df[factor_cols].tail(10).to_string())
 
-    # CNN Fear & Greed Index 조회 → 전체 지수 최신 행에 저장
     cnn_score, cnn_rating = fetch_cnn_fear_greed()
     result_df["CNN_탐욕공포지수"] = np.nan
     result_df["CNN_등급"] = ""
@@ -765,12 +630,3 @@ if __name__ == "__main__":
         result_df.loc[result_df.index[-1], "CNN_등급"] = cnn_rating
 
     _save_result(result_df, "k_fear_greed_result.csv")
-
-    # ── KOSPI100 ──
-    try:
-        result_k100 = calc_k_fear_greed_index(universe="k100")
-        print("\n[최근 10일 인자별 점수 — KOSPI100]")
-        print(result_k100[factor_cols].tail(10).to_string())
-        _save_result(result_k100, "k_fear_greed_result_k100.csv")
-    except Exception as e:
-        print(f"\n[경고] KOSPI100 지수 산출 실패 (건너뜀): {e}")

@@ -26,11 +26,17 @@ jobs:
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
-      - name: K-탐욕공포지수 산출
+      - name: K-탐욕공포지수 산출 (KOSPI 전체)
         env:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
         run: python k_fear_greed_index.py
+
+      - name: K100-탐욕공포지수 산출 (KOSPI100)
+        continue-on-error: true   # K100 실패해도 전체 워크플로우 성공으로 유지
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: python k_fear_greed_k100.py
 
       - name: CSV 커밋 & 푸시
         run: |
