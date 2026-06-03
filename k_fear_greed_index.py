@@ -531,9 +531,12 @@ def calc_k_fear_greed_index(
     """
     print("\n=== K-탐욕공포지수 산출 시작 [KOSPI 전체] ===\n")
 
-    # PCR: KRX_AUTH_KEY 있으면 항상 시도 (캐시 없어도 첫 수집 실행)
+    # PCR 먼저 수집 (가장 오래 걸리는 주가강도보다 앞에 실행)
     has_pcr = bool(KRX_AUTH_KEY)
-    if not has_pcr:
+    pcr_series = None
+    if has_pcr:
+        pcr_series = calc_put_call_ratio()
+    else:
         print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
@@ -542,10 +545,8 @@ def calc_k_fear_greed_index(
         "주가_강도":     strength_series,
         "주가_폭":       calc_market_breadth(_stock_data=stock_data),
     }
-    if has_pcr:
-        pcr = calc_put_call_ratio()
-        if pcr is not None:
-            factors["풋콜_비율"] = pcr
+    if pcr_series is not None:
+        factors["풋콜_비율"] = pcr_series
     factors["신용스프레드"]  = calc_credit_spread()
     factors["시장_변동성"]   = calc_market_volatility(_close=index_close)
     factors["안전자산_수요"] = calc_safe_haven_demand(_close=index_close)
