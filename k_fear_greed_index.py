@@ -324,7 +324,10 @@ def calc_put_call_ratio() -> pd.Series:
     print(f"  신규 수집 필요: {len(missing)}일 / 전체 목표: {len(all_dates)}일")
 
     if missing:
+        import time as _time
+
         def _fetch_one(date_str):
+            _time.sleep(0.5)  # 요청 간 딜레이 — IP 차단 방지
             local_api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
             result = local_api.get_options_daily_trade(bas_dd=date_str)
             rows = result.get("OutBlock_1", [])
@@ -341,40 +344,69 @@ def calc_put_call_ratio() -> pd.Series:
         new_data: dict = {}
         first_row_printed = False
 
-        PCR_ABORT_THRESHOLD = 10  # 연속 빈 응답 N회 → API 한도 소진으로 판단하고 중단
+        PCR_ABORT_THRESHOLD = 10   # 연속 빈 응답 N회 → API 한도 소진으로 판단하고 중단
+        PCR_BATCH_SIZE      = 50   # 배치당 요청 수
+        PCR_BATCH_DELAY     = 30   # 배치 간 대기 시간(초)
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_date = {
-                executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
-                for d in missing
-            }
-            completed = 0
-            consecutive_empty = 0
-            aborted = False
-            for future in as_completed(future_to_date):
-                date = future_to_date[future]
-                completed += 1
-                try:
-                    ratio, rows = future.result(timeout=30)
-                    if not first_row_printed and rows:
-                        print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
-                        first_row_printed = True
-                    if rows:
-                        consecutive_empty = 0
-                    else:
+        # missing 날짜를 50개씩 배치로 분할
+        batches = [missing[i:i + PCR_BATCH_SIZE] for i in range(0, len(missing), PCR_BATCH_SIZE)]
+        total_batches = len(batches)
+        print(f"  배치 수집 시작: {total_batches}배치 × 최대 {PCR_BATCH_SIZE}건 (배치 간 {PCR_BATCH_DELAY}초 대기)")
+
+        aborted = False
+        for batch_idx, batch in enumerate(batches, start=1):
+            if aborted:
+                break
+            print(f"\n  ── 배치 [{batch_idx}/{total_batches}] 시작: {len(batch)}건 ──")
+            batch_start = _time.time()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_to_date = {
+                    executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
+                    for d in batch
+                }
+                completed = 0
+                consecutive_empty = 0
+                for future in as_completed(future_to_date):
+                    date = future_to_date[future]
+                    completed += 1
+                    try:
+                        ratio, rows = future.result(timeout=30)
+                        if not first_row_printed and rows:
+                            print(f"  [진단] API 응답 필드: {list(rows[0].keys())}")
+                            first_row_printed = True
+                        if rows:
+                            consecutive_empty = 0
+                        else:
+                            consecutive_empty += 1
+                        if ratio is not None:
+                            new_data[date] = ratio
+                    except Exception:
                         consecutive_empty += 1
-                    if ratio is not None:
-                        new_data[date] = ratio
-                except Exception:
-                    consecutive_empty += 1
-                if completed % 50 == 0:
-                    print(f"  [{completed}/{len(missing)}] 처리 중... (신규 유효: {len(new_data)}일)")
-                if consecutive_empty >= PCR_ABORT_THRESHOLD:
-                    print(f"  [조기 중단] 연속 {consecutive_empty}회 빈 응답 — API 한도 소진 추정. 수집 중단.")
-                    aborted = True
-                    break
+                    if consecutive_empty >= PCR_ABORT_THRESHOLD:
+                        print(f"  [조기 중단] 연속 {consecutive_empty}회 빈 응답 — API 한도 소진 추정. 수집 중단.")
+                        aborted = True
+                        break
 
-        print(f"  신규 수집 완료: {len(new_data)}일")
+            elapsed = _time.time() - batch_start
+            total_so_far = len(new_data)
+            print(f"  배치 [{batch_idx}/{total_batches}] 완료 — 소요 {elapsed:.0f}초, 누적 유효 {total_so_far}일")
+
+            # 배치마다 캐시 중간 저장 (중단 시 진행분 보존)
+            pcr_cache.update(new_data)
+            if pcr_cache:
+                cache_series = pd.Series(pcr_cache).sort_index()
+                cutoff = pd.Timestamp(pcr_start)
+                cache_series = cache_series[cache_series.index >= cutoff]
+                cache_series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
+                print(f"  중간 캐시 저장: {len(cache_series)}일 → {PCR_CACHE_PATH}")
+
+            # 마지막 배치가 아니면 대기
+            if batch_idx < total_batches and not aborted:
+                print(f"  다음 배치까지 {PCR_BATCH_DELAY}초 대기 중...")
+                _time.sleep(PCR_BATCH_DELAY)
+
+        print(f"\n  신규 수집 완료: {len(new_data)}일 (전체 {total_batches}배치)")
         pcr_cache.update(new_data)
 
         # ── 캐시 저장 (데이터가 있을 때만, 오래된 데이터 정리) ──
