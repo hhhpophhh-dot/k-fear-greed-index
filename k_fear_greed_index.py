@@ -521,17 +521,10 @@ def calc_k_fear_greed_index(
     """
     print("\n=== K-탐욕공포지수 산출 시작 [KOSPI 전체] ===\n")
 
-    # PCR: KRX_AUTH_KEY 있고, 캐시 파일에 유효 데이터 ≥20일 있을 때만 시도
-    has_pcr = False
-    if bool(KRX_AUTH_KEY) and os.path.exists(PCR_CACHE_PATH):
-        try:
-            _pcr_df = pd.read_csv(PCR_CACHE_PATH, index_col=0, parse_dates=True,
-                                   encoding="utf-8-sig")
-            has_pcr = len(_pcr_df.dropna()) >= 20
-        except Exception:
-            pass
+    # PCR: KRX_AUTH_KEY 있으면 항상 시도 (캐시 없어도 첫 수집 실행)
+    has_pcr = bool(KRX_AUTH_KEY)
     if not has_pcr:
-        print("[4/7] 풋/콜 비율 — 캐시 데이터 없음, 건너뜀 (6인자로 계속)")
+        print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
     factors = {
