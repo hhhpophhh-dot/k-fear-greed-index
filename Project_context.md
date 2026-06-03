@@ -12,13 +12,22 @@
 ## 현재 상황
 GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 배포 URL: https://hhhpophhh-dot.github.io/k-fear-greed-index/
-풋/콜 비율 개선 완료 (2026-06-03): PCR 캐시 없으면 완전 건너뜀, 조기 중단 안전장치 추가
-KOSPI100 탭: 지수 시계열 수집 불가로 **보류** (2026-06-03)
-- 네이버 모바일 API: 409 (GitHub Actions IP 차단 추정)
-- 네이버 PC API: 404 (엔드포인트 없음)
-- Stooq/FDR: KOSPI100 심볼 미지원
-- 현재 탭 버튼 숨김 처리(display:none), KOSPI 전체 탭만 운영
-**다음 과제**: KRX API 정상화 확인 후 pcr_raw_data.csv 최초 수집 성공 여부 모니터링
+
+**워크플로우 구조 (2026-06-03 확정)**
+| 파일 | 실행 방식 | 용도 |
+|---|---|---|
+| update.yml | 매일 19:00 KST 자동 + 수동 | K + K100 합본 (일상 운영) |
+| update_k.yml | 수동만 | K지수 단독 테스트/수정 |
+| update_k100.yml | 수동만 | K100지수 단독 테스트/수정 |
+
+**스크립트 구조 (2026-06-03 확정)**
+- `k_fear_greed_index.py` — KOSPI 전체 K지수 전용
+- `k_fear_greed_k100.py` — KOSPI100 K100지수 전용 (공통 함수 import)
+- `index.html` — 두 CSV 탭으로 표시 (시각화 합본)
+
+**현재 미해결 과제 (각 세션에서 별도 진행)**
+- K지수 (`update_k.yml`): 풋/콜 비율 API (KRX OpenAPI) 정상화 — pcr_raw_data.csv 최초 수집 필요
+- K100지수 (`update_k100.yml`): KOSPI100 지수 시계열 API 미확보 (네이버 모바일/PC, Stooq 모두 실패)
 
 ## 이미 결정된 사항
 - 결정 1: 산출 주기 = 종가 기준 1일 1회 (이유: 실시간 데이터 수집 어려움, KOSPI 장 마감 15:30 이후 산출)
@@ -234,6 +243,18 @@ KOSPI100 탭: 지수 시계열 수집 불가로 **보류** (2026-06-03)
 - 현황: 워크플로우 실행 중 (네이버 API 응답 구조 첫 실행 시 로그 출력 예정)
   - 주의: 네이버 API 응답 키가 예상(`localTradedAt`, `closePrice`)과 다를 경우 수정 필요
   - 풋/콜 비율은 여전히 KRX API 한도 소진으로 fallback(6인자) 동작 예정
+
+[Sub 17 - 스크립트 및 워크플로우 분리 (2026-06-03)]
+- k_fear_greed_index.py: KOSPI 전체 전용으로 단순화, K100 관련 코드 완전 제거
+- k_fear_greed_k100.py: KOSPI100 전용 신규 파일, 공통 함수 import 방식
+  - get_kospi100_index_close(): 네이버 모바일/PC/Stooq 순차 시도 구조 유지
+  - get_kospi100_tickers(): FDR 시총 상위 100개
+  - calc_k100_fear_greed_index(): K100 전용 산출 함수
+- 워크플로우 3개로 분리
+  - update.yml: 매일 스케줄 자동실행 (K + K100, K100은 continue-on-error)
+  - update_k.yml: 수동 전용, K지수만 (timeout 30분)
+  - update_k100.yml: 수동 전용, K100지수만 (timeout 30분)
+- 이후 K지수/K100지수 개선 작업은 세션 분리하여 별도 진행
 
 [Sub 16 - KOSPI100 지수 API 대안 탐색 및 보류 (2026-06-03)]
 - 네이버 모바일 API(m.stock.naver.com): 3년/2년/90일 청크 모두 409 → GitHub Actions IP 차단 추정
