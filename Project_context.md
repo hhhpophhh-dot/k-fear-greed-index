@@ -12,12 +12,12 @@
 ## 현재 상황
 GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 배포 URL: https://hhhpophhh-dot.github.io/k-fear-greed-index/
-풋/콜 비율 개선 완료 (2026-06-03):
-- KRX API 한도 소진 상태에서 캐시 미존재 시 API 호출 완전 건너뜀 (15분 낭비 제거)
-- 연속 빈 응답 10회 시 조기 중단 (안전 장치)
-- pcr_raw_data.csv ≥20행 존재 시에만 지수 산출에 포함
-- 페이지: PCR 데이터 없으면 바/테이블 컬럼/설명 숨김, 데이터 확보 시 자동 표시
-KOSPI100 네이버 API 409 오류 수정: 3년 단일 요청 → 1년 단위 청크 분할
+풋/콜 비율 개선 완료 (2026-06-03): PCR 캐시 없으면 완전 건너뜀, 조기 중단 안전장치 추가
+KOSPI100 탭: 지수 시계열 수집 불가로 **보류** (2026-06-03)
+- 네이버 모바일 API: 409 (GitHub Actions IP 차단 추정)
+- 네이버 PC API: 404 (엔드포인트 없음)
+- Stooq/FDR: KOSPI100 심볼 미지원
+- 현재 탭 버튼 숨김 처리(display:none), KOSPI 전체 탭만 운영
 **다음 과제**: KRX API 정상화 확인 후 pcr_raw_data.csv 최초 수집 성공 여부 모니터링
 
 ## 이미 결정된 사항
@@ -234,6 +234,14 @@ KOSPI100 네이버 API 409 오류 수정: 3년 단일 요청 → 1년 단위 청
 - 현황: 워크플로우 실행 중 (네이버 API 응답 구조 첫 실행 시 로그 출력 예정)
   - 주의: 네이버 API 응답 키가 예상(`localTradedAt`, `closePrice`)과 다를 경우 수정 필요
   - 풋/콜 비율은 여전히 KRX API 한도 소진으로 fallback(6인자) 동작 예정
+
+[Sub 16 - KOSPI100 지수 API 대안 탐색 및 보류 (2026-06-03)]
+- 네이버 모바일 API(m.stock.naver.com): 3년/2년/90일 청크 모두 409 → GitHub Actions IP 차단 추정
+- 네이버 PC API(api.stock.naver.com/index/KOSPI100/basicIndicesByTradedAt): 404 엔드포인트 없음
+- Stooq(FDR): ^ksp100, KSP100.PL, KS100.WA 모두 실패
+- FDR 직접 조회: KQ11은 KOSDAQ 지수, KOSPI100 심볼 미지원
+- **결론**: 무료 공개 API로 KOSPI100 지수 시계열 수집 불가 → 탭 보류
+- KOSPI100 탭 버튼 display:none 처리, 코드는 graceful fallback 유지
 
 [Sub 15 - 풋/콜 비율 개선 및 KOSPI100 API 수정 (2026-06-03)]
 - 풋/콜 비율 지수 산출 완전 배제 (pcr_raw_data.csv ≥20행 존재 시에만 활성화)
