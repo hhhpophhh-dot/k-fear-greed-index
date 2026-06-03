@@ -352,7 +352,6 @@ def calc_put_call_ratio() -> pd.Series:
 
         # missing 날짜를 50개씩 배치로 분할
         batches = [missing[i:i + PCR_BATCH_SIZE] for i in range(0, len(missing), PCR_BATCH_SIZE)]
-        batches = batches[:2]  # [테스트] 2배치만 — 확인 후 제거
         total_batches = len(batches)
         print(f"  배치 수집 시작: {total_batches}배치 × 최대 {PCR_BATCH_SIZE}건 (배치 간 {PCR_BATCH_DELAY}초 대기)")
 
