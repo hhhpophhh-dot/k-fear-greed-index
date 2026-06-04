@@ -398,7 +398,7 @@ def calc_put_call_ratio() -> pd.Series:
 
             # 배치마다 캐시 저장 + git push (중단 시 진행분 보존)
             pcr_cache.update(new_data)
-            if pcr_cache:
+            if new_data:  # 신규 데이터가 있을 때만 저장
                 cache_series = pd.Series(pcr_cache).sort_index()
                 cutoff = pd.Timestamp(pcr_start)
                 cache_series = cache_series[cache_series.index >= cutoff]
