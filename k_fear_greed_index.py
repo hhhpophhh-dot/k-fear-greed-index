@@ -321,8 +321,12 @@ def calc_put_call_ratio(trading_days: pd.DatetimeIndex = None) -> pd.Series:
         except Exception as e:
             print(f"[4/7] 풋/콜 비율 — 캐시 로드 실패 (재수집): {e}")
 
-    # ── 미수집 날짜만 API 호출 ──
-    missing = [d for d in all_dates if d not in pcr_cache]
+    # ── 미수집 날짜만 API 호출 (캐시가 있으면 마지막 날짜 이후만) ──
+    if pcr_cache:
+        last_cached = max(pcr_cache.keys())
+        missing = [d for d in all_dates if d > last_cached]
+    else:
+        missing = list(all_dates)
     print(f"  신규 수집 필요: {len(missing)}일 / 전체 목표: {len(all_dates)}일")
 
     if missing:
