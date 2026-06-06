@@ -535,6 +535,9 @@ def calc_k_fear_greed_index(
     """
     print("\n=== K-탐욕공포지수 산출 시작 [KOSPI 전체] ===\n")
 
+    # KOSPI 종가 한 번만 수집 (거래일 필터링 + 각 인자 계산 공용)
+    _index_close = index_close if index_close is not None else get_kospi_close()
+
     # PCR 먼저 수집 (가장 오래 걸리는 주가강도보다 앞에 실행)
     has_pcr = bool(KRX_AUTH_KEY)
     pcr_series = None
@@ -545,20 +548,24 @@ def calc_k_fear_greed_index(
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
     factors = {
-        "주가_모멘텀":   calc_price_momentum(_close=index_close),
+        "주가_모멘텀":   calc_price_momentum(_close=_index_close),
         "주가_강도":     strength_series,
         "주가_폭":       calc_market_breadth(_stock_data=stock_data),
     }
     if pcr_series is not None:
         factors["풋콜_비율"] = pcr_series
     factors["신용스프레드"]  = calc_credit_spread()
-    factors["시장_변동성"]   = calc_market_volatility(_close=index_close)
-    factors["안전자산_수요"] = calc_safe_haven_demand(_close=index_close)
+    factors["시장_변동성"]   = calc_market_volatility(_close=_index_close)
+    factors["안전자산_수요"] = calc_safe_haven_demand(_close=_index_close)
 
     n_factors = len(factors)
     print(f"  실제 사용 인자: {n_factors}개 ({', '.join(factors.keys())})")
 
     result = pd.DataFrame(factors)
+
+    # 증권거래소 영업일만 유지 (ECOS 채권 데이터는 공휴일·주말도 포함하므로)
+    result = result[result.index.isin(_index_close.index)]
+
     result["신고가_종목수"] = raw_highs.reindex(result.index)
     result["신저가_종목수"] = raw_lows.reindex(result.index)
     result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
