@@ -362,7 +362,8 @@ def calc_put_call_ratio() -> pd.Series:
             print(f"\n  ── 배치 [{batch_idx}/{total_batches}] 시작: {len(batch)}건 ──")
             batch_start = _time.time()
 
-            with ThreadPoolExecutor(max_workers=2) as executor:
+            executor = ThreadPoolExecutor(max_workers=2)
+            try:
                 future_to_date = {
                     executor.submit(_fetch_one, d.strftime("%Y%m%d")): d
                     for d in batch
@@ -391,6 +392,9 @@ def calc_put_call_ratio() -> pd.Series:
                         print(f"  [조기 중단] 연속 {consecutive_empty}회 빈 응답 — API 한도 소진 추정. 수집 중단.")
                         aborted = True
                         break
+            finally:
+                # cancel_futures=True: abort 시 아직 실행 안 된 future 즉시 취소
+                executor.shutdown(wait=False, cancel_futures=True)
 
             elapsed = _time.time() - batch_start
             total_so_far = len(new_data)
