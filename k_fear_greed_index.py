@@ -281,7 +281,7 @@ PCR_CACHE_PATH = "pcr_raw_data.csv"   # 원시 P/C 비율 캐시 파일
 
 
 # ============================================================
-def calc_put_call_ratio() -> pd.Series:
+def calc_put_call_ratio(trading_days: pd.DatetimeIndex = None) -> pd.Series:
     """
     KOSPI200 옵션 풋/콜 비율
 
@@ -304,9 +304,11 @@ def calc_put_call_ratio() -> pd.Series:
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # 수집 목표 기간 (252일 정규화 + 여유)
+    # 수집 목표 기간 (252일 정규화 + 여유) — 증권거래소 실제 거래일 기준
     pcr_start = (datetime.today() - timedelta(days=400 * 7 // 5 + 30)).strftime("%Y-%m-%d")
-    all_dates  = pd.bdate_range(start=pcr_start, end=TODAY_FDR)
+    if trading_days is None:
+        trading_days = get_kospi_close().index
+    all_dates = trading_days[trading_days >= pd.Timestamp(pcr_start)]
 
     # ── 캐시 로드 ──
     pcr_cache: dict = {}
@@ -546,7 +548,7 @@ def calc_k_fear_greed_index(
     has_pcr = bool(KRX_AUTH_KEY)
     pcr_series = None
     if has_pcr:
-        pcr_series = calc_put_call_ratio()
+        pcr_series = calc_put_call_ratio(trading_days=_index_close.index)
     else:
         print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
