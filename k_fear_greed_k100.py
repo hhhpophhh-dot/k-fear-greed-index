@@ -115,6 +115,15 @@ def get_kospi100_index_close() -> pd.Series:
         except Exception:
             continue
 
+    # 4안: KOSPI 전체(KS11) fallback — 지수 시계열 없을 때 대체 사용
+    try:
+        df = fdr.DataReader("KS11", k100_start, TODAY_FDR)
+        if len(df) > 100 and "Close" in df.columns:
+            print(f"  [K100] ⚠️  KOSPI100 지수 API 없음 → KS11(KOSPI 전체) fallback 사용 ({len(df)}일)")
+            return df["Close"].astype(float)
+    except Exception as e:
+        print(f"  [K100] KS11 fallback 실패: {e}")
+
     raise ValueError("KOSPI100 지수 시계열 수집 실패 — 모든 API 시도 소진")
 
 
