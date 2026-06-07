@@ -38,7 +38,32 @@
       gap: 10px;
     }
     header h1 { font-size: 1.1rem; font-weight: 700; flex-shrink: 0; }
-    header .subtitle { font-size: 0.78rem; color: var(--muted); }
+    header .subtitle { font-size: 0.78rem; color: var(--muted); flex: 1; }
+
+    /* 뷰 토글 버튼 */
+    .view-toggle {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .view-toggle button {
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .view-toggle button.active {
+      background: #21262d;
+      color: var(--text);
+      border-color: #58a6ff;
+    }
+    .view-toggle button:hover:not(.active) { background: #1c2128; }
 
     .main {
       max-width: 1200px;
@@ -263,7 +288,17 @@
       .factors-row,
       .table-row { grid-template-columns: 1fr; }
       .gauge-wrap { width: 200px; }
+      .view-toggle { display: none; }
     }
+
+    /* ── 모바일 프리뷰 모드 (PC에서 모바일 레이아웃 시뮬레이션) ── */
+    body.mobile-preview .main { max-width: 390px; padding: 16px; }
+    body.mobile-preview .gauge-row,
+    body.mobile-preview .factors-row,
+    body.mobile-preview .table-row { grid-template-columns: 1fr; }
+    body.mobile-preview .gauge-wrap { width: 200px; }
+    body.mobile-preview header h1 { font-size: 1rem; }
+    body.mobile-preview header .subtitle { display: none; }
   </style>
 </head>
 <body>
@@ -273,6 +308,10 @@
 <header>
   <h1>🇰🇷 K-탐욕공포지수</h1>
   <span class="subtitle">KOSPI 전체 vs KOSPI 100 비교</span>
+  <div class="view-toggle">
+    <button id="btnPC" class="active" onclick="setView('pc')">🖥 PC</button>
+    <button id="btnMobile" onclick="setView('mobile')">📱 모바일</button>
+  </div>
 </header>
 
 <div class="main">
@@ -826,6 +865,15 @@ async function init() {
 }
 
 init();
+
+// ── PC / 모바일 뷰 토글 ──
+function setView(mode) {
+  document.body.classList.toggle("mobile-preview", mode === "mobile");
+  document.getElementById("btnPC").classList.toggle("active", mode === "pc");
+  document.getElementById("btnMobile").classList.toggle("active", mode === "mobile");
+  // 차트 리사이즈
+  if (histChart) histChart.resize();
+}
 </script>
 </body>
 </html>
