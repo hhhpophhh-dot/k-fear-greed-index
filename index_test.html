@@ -291,14 +291,9 @@
       .view-toggle { display: none; }
     }
 
-    /* ── 모바일 프리뷰 모드 (PC에서 모바일 레이아웃 시뮬레이션) ── */
-    body.mobile-preview .main { max-width: 390px; padding: 16px; }
-    body.mobile-preview .gauge-row,
-    body.mobile-preview .factors-row,
-    body.mobile-preview .table-row { grid-template-columns: 1fr; }
-    body.mobile-preview .gauge-wrap { width: 200px; }
-    body.mobile-preview header h1 { font-size: 1rem; }
-    body.mobile-preview header .subtitle { display: none; }
+    /* ── 모바일 프리뷰: 배경 딤 처리 ── */
+    body.mobile-preview { background: #000; }
+    body.mobile-preview header { max-width: 390px; margin: 0 auto; }
   </style>
 </head>
 <body>
@@ -867,12 +862,41 @@ async function init() {
 init();
 
 // ── PC / 모바일 뷰 토글 ──
+const MOBILE_W = 390;
+
 function setView(mode) {
-  document.body.classList.toggle("mobile-preview", mode === "mobile");
   document.getElementById("btnPC").classList.toggle("active", mode === "pc");
   document.getElementById("btnMobile").classList.toggle("active", mode === "mobile");
-  // 차트 리사이즈
+  document.body.classList.toggle("mobile-preview", mode === "mobile");
+
+  const main      = document.querySelector(".main");
+  const gaugeRow  = document.querySelector(".gauge-row");
+  const factorRow = document.querySelector(".factors-row");
+  const tableRow  = document.querySelector(".table-row");
+  const gaugeWraps = document.querySelectorAll(".gauge-wrap");
+
+  if (mode === "mobile") {
+    main.style.maxWidth  = MOBILE_W + "px";
+    main.style.margin    = "0 auto";
+    main.style.padding   = "16px";
+    [gaugeRow, factorRow, tableRow].forEach(el => {
+      if (el) el.style.gridTemplateColumns = "1fr";
+    });
+    gaugeWraps.forEach(el => el.style.width = "200px");
+  } else {
+    main.style.maxWidth  = "";
+    main.style.margin    = "";
+    main.style.padding   = "";
+    [gaugeRow, factorRow, tableRow].forEach(el => {
+      if (el) el.style.gridTemplateColumns = "";
+    });
+    gaugeWraps.forEach(el => el.style.width = "");
+  }
+
   if (histChart) histChart.resize();
+  // 게이지 다시 그리기 (크기 변경 시)
+  const scoreK = parseFloat(document.getElementById("scoreK")?.textContent);
+  if (!isNaN(scoreK)) drawGauge("gaugeK", scoreK);
 }
 </script>
 </body>
