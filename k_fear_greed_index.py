@@ -671,7 +671,15 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
 
 
 if __name__ == "__main__":
-    result_df = calc_k_fear_greed_index()
+    import sys
+
+    # 기준일이 증권거래소 휴장일(공휴일·주말)이면 조기 종료
+    _close_check = get_kospi_close()
+    if pd.Timestamp(TODAY_FDR) not in _close_check.index:
+        print(f"[종료] {TODAY_FDR}은 증권거래소 휴장일 — 실행 건너뜀")
+        sys.exit(0)
+
+    result_df = calc_k_fear_greed_index(index_close=_close_check)
 
     print("\n[최근 10일 인자별 점수 — KOSPI 전체]")
     factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
