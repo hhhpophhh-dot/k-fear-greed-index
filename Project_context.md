@@ -26,8 +26,10 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
 - `index.html` — 두 CSV 탭으로 표시 (시각화 합본)
 
 **현재 미해결 과제 (각 세션에서 별도 진행)**
-- K지수 (`update_k.yml`): 풋/콜 비율 API (KRX OpenAPI) 정상화 — pcr_raw_data.csv 최초 수집 필요
-- K100지수 (`update_k100.yml`): KOSPI100 지수 시계열 API 미확보 (네이버 모바일/PC, Stooq 모두 실패)
+- K지수: 풋/콜 비율 캐시(pcr_raw_data.csv) 391일 수집 완료, 매일 1~2일씩 자동 추가 수집 중 (정상 운영)
+  - 풋콜 없는 기간: 2024-12-17 ~ 2025-11-05 (213행) — 초기 미수집 구간, 소급 수집 불필요
+  - 풋콜 있는 기간: 2025-11-06 ~ 현재 (140행+) — 7인자 정상 활성화
+- K100지수 (`update_k100.yml`): KOSPI100 지수 시계열 API 미확보 (네이버 모바일/PC, Stooq 모두 실패) — 보류 중
 
 ## 이미 결정된 사항
 - 결정 1: 산출 주기 = 종가 기준 1일 1회 (이유: 실시간 데이터 수집 어려움, KOSPI 장 마감 15:30 이후 산출)
@@ -37,10 +39,10 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - 사유: pykrx 1.2.8 업그레이드로 지수 API(get_index_ohlcv_by_date 등)는 KRX 로그인 필수가 됨
   - 개별 종목 API(get_market_ohlcv_by_date)는 로그인 없이 여전히 작동 → 유지
   - KOSPI 지수 시계열, 종목 목록: FinanceDataReader(FDR)로 대체
-- 결정 5: 풋/콜 비율 = KRX Open API(openapi.krx.co.kr)로 추가 시도 중 (Sub 12)
+- 결정 5: 풋/콜 비율 = KRX Open API(openapi.krx.co.kr) 정상 운영 중 (2026-06-07 확정)
   - 데이터 수집: pykrx-openapi 라이브러리, `get_options_daily_trade()` → OutBlock_1
-  - 캐시 방식: pcr_raw_data.csv에 원시 P/C 비율 저장, 신규 날짜만 API 호출
-  - 현황: KRX Open API 일일 호출 한도(1,000~2,000회) 초과로 아직 미작동. 다음 실행 대기 중
+  - 캐시 방식: pcr_raw_data.csv에 원시 P/C 비율 저장, 마지막 캐시 날짜 이후 날짜만 API 호출 (1~2회/일)
+  - 수집 대상: pd.bdate_range → KOSPI FDR 실제 거래일 기준으로 변경 (공휴일 API 낭비 방지)
   - Fallback: 데이터 부족 시 6개 인자로 자동 계속 실행
 
 ## K-탐욕공포지수 인자 (6+1개 목표)
@@ -289,3 +291,13 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   - K100지수: ~1분 (캐시 재사용, 추가 부담 미미)
 - **다음 과제**: 풋/콜 비율 수집에 최대 시간 제한 또는 skip 로직 추가 → 실행시간 단축 검토
 - 로컬-GitHub 동기화 가이드 확정: Claude Code 세션 시작 시 `git pull origin main` 실행
+
+[Sub 18 - PCR 수집 안정화 및 코드 정비 (2026-06-07)]
+- PCR 수집 정상화: 캐시 391일 확보 (2024-10-24~2026-06-04), 7인자 활성화 기간 2025-11-06~현재 (140행+)
+  - 초기 미수집 구간(2024-12-17~2025-11-05, 213행)은 소급 수집 불필요 — 6인자로 유지
+- 버그 수정 3건
+  1. 공휴일 데이터 CSV 포함: ECOS API가 공휴일에도 채권 금리 반환 → FDR KOSPI 거래일 인덱스로 필터링
+  2. PCR abort 후 API 계속 호출: `with ThreadPoolExecutor` → `executor.shutdown(cancel_futures=True)` 로 미실행 future 즉시 취소
+  3. PCR 캐시 이전 날짜 재시도: `missing = all_dates not in cache` → `last_cached 이후만` 으로 변경 (33일→3일)
+- PCR 수집 대상: `pd.bdate_range` → KOSPI FDR 실제 거래일 기준 (공휴일 API 낭비 방지)
+- GitHub Actions: `checkout@v4→v5`, `setup-python@v5→v6` 업그레이드 (Node.js 20 deprecated, 6/16 강제 전환 전 대응)
