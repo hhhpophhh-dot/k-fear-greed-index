@@ -301,3 +301,4 @@ GitHub Actions 자동화 + GitHub Pages 배포 완료 (2026-06-01)
   3. PCR 캐시 이전 날짜 재시도: `missing = all_dates not in cache` → `last_cached 이후만` 으로 변경 (33일→3일)
 - PCR 수집 대상: `pd.bdate_range` → KOSPI FDR 실제 거래일 기준 (공휴일 API 낭비 방지)
 - GitHub Actions: `checkout@v4→v5`, `setup-python@v5→v6` 업그레이드 (Node.js 20 deprecated, 6/16 강제 전환 전 대응)
+- 휴장일 조기 종료 추가: 기준일이 FDR KOSPI 거래일 인덱스에 없으면 즉시 exit(0) — 수동 실행 시 공휴일 KRX 서버 오류 방지
