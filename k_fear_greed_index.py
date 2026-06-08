@@ -148,12 +148,17 @@ def get_kospi_stock_data() -> dict:
     if _kospi_stock_cache is not None:
         return _kospi_stock_cache
 
-    # 종목 목록: pykrx (FDR StockListing은 KRX URL 불안정으로 대체)
+    # 종목 목록: pykrx — 당일 조회 실패 시 최대 7일 이내 날짜로 재시도
     tickers = stock.get_market_ticker_list(TODAY, market="KOSPI")
-
     if not tickers:
-        print("  [경고] KRX 종목 목록 수집 실패 (서버 무응답) — 주가강도·주가폭 건너뜀")
-        return None
+        for days_back in range(1, 8):
+            fallback = (_base - timedelta(days=days_back)).strftime("%Y%m%d")
+            tickers = stock.get_market_ticker_list(fallback, market="KOSPI")
+            if tickers:
+                print(f"  [재시도] 종목 목록: {fallback} 기준 사용")
+                break
+    if not tickers:
+        raise RuntimeError("KRX 종목 목록 수집 실패 — 7일 이내 모든 날짜에서 빈 응답")
 
     print(f"  KOSPI 전 종목 {len(tickers)}개 수집 중 (약 2~5분 소요)...")
 
@@ -220,8 +225,6 @@ def calc_price_strength(_stock_data: dict = None):
     print("[2/7] 주가 강도 계산 중...")
 
     data = _stock_data if _stock_data is not None else get_kospi_stock_data()
-    if data is None:
-        return None, pd.Series(dtype=float), pd.Series(dtype=float)
     close_df = data["close"]
 
     rolling_high = close_df.rolling(window=252).max()
@@ -260,8 +263,6 @@ def calc_market_breadth(_stock_data: dict = None) -> pd.Series:
     print("[3/7] 주가 폭 (McClellan Summation) 계산 중...")
 
     data = _stock_data if _stock_data is not None else get_kospi_stock_data()
-    if data is None:
-        return None
     vol_df = data["volume"]
     chg_df = data["change"]
 
@@ -564,13 +565,11 @@ def calc_k_fear_greed_index(
         print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
-    breadth_series = calc_market_breadth(_stock_data=stock_data)
-
-    factors = {"주가_모멘텀": calc_price_momentum(_close=_index_close)}
-    if strength_series is not None:
-        factors["주가_강도"] = strength_series
-    if breadth_series is not None:
-        factors["주가_폭"] = breadth_series
+    factors = {
+        "주가_모멘텀":   calc_price_momentum(_close=_index_close),
+        "주가_강도":     strength_series,
+        "주가_폭":       calc_market_breadth(_stock_data=stock_data),
+    }
     if pcr_series is not None:
         factors["풋콜_비율"] = pcr_series
     factors["신용스프레드"]  = calc_credit_spread()
@@ -585,8 +584,8 @@ def calc_k_fear_greed_index(
     # 증권거래소 영업일만 유지 (ECOS 채권 데이터는 공휴일·주말도 포함하므로)
     result = result[result.index.isin(_index_close.index)]
 
-    result["신고가_종목수"] = raw_highs.reindex(result.index) if raw_highs is not None else np.nan
-    result["신저가_종목수"] = raw_lows.reindex(result.index) if raw_lows is not None else np.nan
+    result["신고가_종목수"] = raw_highs.reindex(result.index)
+    result["신저가_종목수"] = raw_lows.reindex(result.index)
     result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
 
     def label(score):
