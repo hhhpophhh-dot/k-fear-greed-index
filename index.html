@@ -143,6 +143,8 @@
     }
     .factor-name { color: var(--text); }
     .factor-val  { font-weight: 700; font-size: 0.85rem; }
+    .est-badge   { font-size: 10px; background: #555; color: #ccc; border-radius: 3px;
+                   padding: 1px 4px; margin-left: 5px; vertical-align: middle; cursor: default; }
     .bar-track {
       height: 7px;
       background: var(--border);
@@ -431,6 +433,30 @@ function parseCSV(text) {
 }
 
 // ──────────────────────────────────────────
+// 전일값 forward-fill: 빈값인 인자를 직전 유효값으로 채우고 _추정 플래그 설정
+// ──────────────────────────────────────────
+const FACTOR_KEYS = ["주가_모멘텀","주가_강도","주가_폭","풋콜_비율","신용스프레드","시장_변동성","안전자산_수요"];
+function applyForwardFill(rows) {
+  const lastKnown = {};
+  return rows.map(r => {
+    const nr = {...r};
+    FACTOR_KEYS.forEach(k => {
+      const v = parseFloat(r[k]);
+      if (!isNaN(v)) {
+        lastKnown[k] = r[k];
+        nr[k + "_est"] = false;
+      } else if (lastKnown[k] !== undefined) {
+        nr[k] = lastKnown[k];
+        nr[k + "_est"] = true;
+      } else {
+        nr[k + "_est"] = false;
+      }
+    });
+    return nr;
+  });
+}
+
+// ──────────────────────────────────────────
 // 게이지 (반원 도넛)
 // ──────────────────────────────────────────
 function drawGauge(score) {
@@ -535,6 +561,7 @@ function renderFactorBars(row) {
     const val = parseFloat(row[key]);
     const color = scoreColor(val);
     const label = FACTOR_LABELS[key];
+    const isEst = row[key + "_est"];
     const div = document.createElement("div");
     div.className = "factor-row";
 
@@ -551,7 +578,7 @@ function renderFactorBars(row) {
 
     div.innerHTML = `
       <div class="factor-header">
-        <span class="factor-name">${label}</span>
+        <span class="factor-name">${label}${isEst ? '<span class="est-badge" title="직전 거래일 값 사용">전일</span>' : ''}</span>
         <span class="factor-val" style="color:${color}">${fmt(val)}</span>
       </div>
       <div class="bar-track">
@@ -668,16 +695,17 @@ function renderTable(rows) {
     const score = parseFloat(r["K_탐욕공포지수"]);
     const grade = r["등급"] || "—";
     const ginfo = GRADE_MAP[grade] || { cls: "", bgCls: "", hex: "#8b949e" };
+    const estBadge = key => r[key + "_est"] ? '<span class="est-badge" title="직전 거래일 값 사용">전일</span>' : "";
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${r["날짜"].slice(0, 10)}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
-      <td class="pcr-col" style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}${estBadge('주가_모멘텀')}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}${estBadge('주가_강도')}</td>
+      <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}${estBadge('주가_폭')}</td>
+      <td class="pcr-col" style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}${estBadge('풋콜_비율')}</td>
+      <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}${estBadge('신용스프레드')}</td>
+      <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}${estBadge('시장_변동성')}</td>
+      <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}${estBadge('안전자산_수요')}</td>
       <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
       <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>`;
     tbody.appendChild(tr);
@@ -688,7 +716,7 @@ function renderTable(rows) {
 // 렌더 공통 함수
 // ──────────────────────────────────────────
 function renderAll(text) {
-  const rows = parseCSV(text).filter(r => r["날짜"] && r["K_탐욕공포지수"]);
+  const rows = applyForwardFill(parseCSV(text).filter(r => r["날짜"] && r["K_탐욕공포지수"]));
   if (rows.length === 0) {
     document.getElementById("loading-msg").textContent = "⚠️ CSV 데이터가 비어있습니다.";
     return;
