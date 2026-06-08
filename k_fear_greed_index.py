@@ -42,6 +42,8 @@ KRX_AUTH_KEY    = os.environ.get("KRX_AUTH_KEY", "")
 CNN_FNG_URL     = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
 LOOKBACK_DAYS = 252                        # 정규화 기준 기간 (약 1년 거래일)
 CUTOFF_HOUR   = 17                         # 데이터 기준일 전환 시각 (17:00 이후 = 당일)
+# KRX API 데이터는 익일 08:00 KST 업데이트 → 스케줄은 익일 09:00 KST 실행 (전일 기준 수집)
+# 09:00 실행 시 CUTOFF_HOUR(17) 미만이므로 자동으로 전날 기준일 사용
 
 # 17:00 이전이면 전날, 이후면 당일을 기준일로 사용 (KST 기준)
 _KST = timezone(timedelta(hours=9))
