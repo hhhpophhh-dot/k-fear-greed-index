@@ -284,10 +284,13 @@
 
     /* ── 반응형 ── */
     @media (max-width: 700px) {
-      .gauge-row,
-      .factors-row,
+      .main { padding: 12px; gap: 12px; }
+      /* 게이지·인자 바: 2컬럼 유지 (가로 비교) */
+      .gauge-wrap { width: 150px; }
+      .gauge-wrap canvas { width: 150px; height: 88px; }
+      .gauge-label .score { font-size: 1.9rem; }
+      /* 테이블만 단일 컬럼 (너무 좁아 가독성 저하) */
       .table-row { grid-template-columns: 1fr; }
-      .gauge-wrap { width: 200px; }
       .view-toggle { display: none; }
     }
 
@@ -864,41 +867,54 @@ init();
 // ── PC / 모바일 뷰 토글 ──
 const MOBILE_W = 390;
 
+function setGaugeSize(canvasId, w, h) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  canvas.width  = w;
+  canvas.height = h;
+  const wrap = canvas.closest(".gauge-wrap");
+  if (wrap) wrap.style.width = w + "px";
+}
+
+function redrawAllGauges() {
+  const scoreK = parseFloat(document.getElementById("scoreK")?.textContent);
+  if (!isNaN(scoreK)) drawGauge("gaugeK", scoreK);
+  const scoreK100 = parseFloat(document.getElementById("scoreK100")?.textContent);
+  if (!isNaN(scoreK100)) drawGauge("gaugeK100", scoreK100);
+}
+
 function setView(mode) {
   document.getElementById("btnPC").classList.toggle("active", mode === "pc");
   document.getElementById("btnMobile").classList.toggle("active", mode === "mobile");
   document.body.classList.toggle("mobile-preview", mode === "mobile");
 
   const main      = document.querySelector(".main");
-  const gaugeRow  = document.querySelector(".gauge-row");
-  const factorRow = document.querySelector(".factors-row");
   const tableRow  = document.querySelector(".table-row");
-  const gaugeWraps = document.querySelectorAll(".gauge-wrap");
 
   if (mode === "mobile") {
-    main.style.maxWidth  = MOBILE_W + "px";
-    main.style.marginLeft  = "0";
-    main.style.marginRight = "0";
-    main.style.padding   = "16px";
-    [gaugeRow, factorRow, tableRow].forEach(el => {
-      if (el) el.style.gridTemplateColumns = "1fr";
-    });
-    gaugeWraps.forEach(el => el.style.width = "200px");
+    main.style.maxWidth   = MOBILE_W + "px";
+    main.style.marginLeft = "0";
+    main.style.marginRight= "0";
+    main.style.padding    = "12px";
+    main.style.gap        = "12px";
+    // 게이지/인자 바는 2컬럼 유지, 테이블만 단일 컬럼
+    if (tableRow) tableRow.style.gridTemplateColumns = "1fr";
+    // 게이지 캔버스 축소
+    setGaugeSize("gaugeK",    160, 94);
+    setGaugeSize("gaugeK100", 160, 94);
   } else {
     main.style.maxWidth    = "";
     main.style.marginLeft  = "";
     main.style.marginRight = "";
-    main.style.padding   = "";
-    [gaugeRow, factorRow, tableRow].forEach(el => {
-      if (el) el.style.gridTemplateColumns = "";
-    });
-    gaugeWraps.forEach(el => el.style.width = "");
+    main.style.padding     = "";
+    main.style.gap         = "";
+    if (tableRow) tableRow.style.gridTemplateColumns = "";
+    setGaugeSize("gaugeK",    220, 130);
+    setGaugeSize("gaugeK100", 220, 130);
   }
 
   if (histChart) histChart.resize();
-  // 게이지 다시 그리기 (크기 변경 시)
-  const scoreK = parseFloat(document.getElementById("scoreK")?.textContent);
-  if (!isNaN(scoreK)) drawGauge("gaugeK", scoreK);
+  redrawAllGauges();
 }
 </script>
 </body>
