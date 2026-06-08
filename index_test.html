@@ -399,6 +399,7 @@
                 <th>모멘텀</th>
                 <th>강도</th>
                 <th>폭</th>
+                <th class="pcr-col" style="display:none">풋/콜</th>
                 <th>신용</th>
                 <th>변동성</th>
                 <th>안전자산</th>
@@ -572,6 +573,7 @@ const FACTOR_LABELS = {
   "주가_모멘텀":   "주가 모멘텀",
   "주가_강도":     "주가 강도",
   "주가_폭":       "주가 폭",
+  "풋콜_비율":     "풋/콜 비율",
   "신용스프레드":  "신용스프레드",
   "시장_변동성":   "시장 변동성",
   "안전자산_수요": "안전자산 수요",
@@ -580,7 +582,9 @@ const FACTOR_LABELS = {
 function renderFactorBars(containerId, row) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
+  const hasPCR = row["풋콜_비율"] && !isNaN(parseFloat(row["풋콜_비율"]));
   Object.entries(FACTOR_LABELS).forEach(([key, label]) => {
+    if (key === "풋콜_비율" && !hasPCR) return;
     const val = parseFloat(row[key]);
     const color = scoreColor(val);
     const div = document.createElement("div");
@@ -617,6 +621,12 @@ function renderTable(tbodyId, rows) {
   const tbody = document.getElementById(tbodyId);
   if (!tbody) return;
   tbody.innerHTML = "";
+  // 풋/콜 컬럼 표시 여부: 이 rows에 유효 데이터가 하나라도 있으면
+  const hasPCR = rows.some(r => r["풋콜_비율"] && !isNaN(parseFloat(r["풋콜_비율"])));
+  // 헤더 PCR 컬럼 토글
+  const tbl = tbody.closest("table");
+  if (tbl) tbl.querySelectorAll(".pcr-col").forEach(el => el.style.display = hasPCR ? "" : "none");
+
   last10.forEach(r => {
     const score = parseFloat(r["K_탐욕공포지수"]);
     const grade = r["등급"] || "—";
@@ -627,6 +637,7 @@ function renderTable(tbodyId, rows) {
       <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
       <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
+      <td class="pcr-col" style="display:${hasPCR ? '' : 'none'};color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
       <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
       <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
       <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>
@@ -774,6 +785,7 @@ function renderK100Table(rows) {
         <thead>
           <tr>
             <th>날짜</th><th>모멘텀</th><th>강도</th><th>폭</th>
+            <th class="pcr-col" style="display:none">풋/콜</th>
             <th>신용</th><th>변동성</th><th>안전자산</th>
             <th>K100-지수</th><th>등급</th>
           </tr>
