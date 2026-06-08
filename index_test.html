@@ -602,17 +602,19 @@ function drawGauge(canvasId, score) {
 
 // ──────────────────────────────────────────
 // 인자별 바 (factorCols: CSV에서 추출된 인자 컬럼 배열)
+// rows: 전체 데이터셋 (인자 존재 여부 판단용)
 // ──────────────────────────────────────────
-function renderFactorBars(containerId, row, factorCols) {
+function renderFactorBars(containerId, row, factorCols, rows) {
   const container = document.getElementById(containerId);
   if (!container) return;
   container.innerHTML = "";
 
   factorCols.forEach(key => {
-    // 값이 비어있는 인자는 표시 안 함
-    if (!row[key] || isNaN(parseFloat(row[key]))) return;
+    // 전체 데이터셋에 유효값이 하나도 없으면 표시 안 함 (미수집 인자)
+    const hasAny = rows && rows.some(r => r[key] && !isNaN(parseFloat(r[key])));
+    if (!hasAny) return;
 
-    const val   = parseFloat(row[key]);
+    const val   = parseFloat(row[key]);   // 최신 행 값 (없으면 NaN)
     const color = scoreColor(val);
     const label = colLabel(key);
     const div   = document.createElement("div");
@@ -631,10 +633,10 @@ function renderFactorBars(containerId, row, factorCols) {
     div.innerHTML = `
       <div class="factor-header">
         <span class="factor-name">${label}</span>
-        <span class="factor-val" style="color:${color}">${fmt(val)}</span>
+        <span class="factor-val" style="color:${color}">${fmt(row[key])}</span>
       </div>
       <div class="bar-track">
-        <div class="bar-fill" style="width:${val}%;background:${color}"></div>
+        <div class="bar-fill" style="width:${isNaN(val) ? 0 : val}%;background:${isNaN(val) ? 'var(--border)' : color}"></div>
       </div>
       ${extra}`;
     container.appendChild(div);
@@ -858,7 +860,7 @@ function renderUniverse({ text, gaugeId, scoreId, gradeId, dateId, updatedId,
   }
 
   // 인자 바
-  renderFactorBars(factorBarsId, latest, factorCols);
+  renderFactorBars(factorBarsId, latest, factorCols, rows);
   // 테이블 (헤더 포함 동적 생성)
   renderTable(tableWrapId, rows, factorCols, scoreLabel);
 
