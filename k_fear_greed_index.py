@@ -673,12 +673,12 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
 if __name__ == "__main__":
     import sys
 
-    # 기준일이 증권거래소 휴장일(공휴일·주말)이면 조기 종료
-    _close_check = get_kospi_close()
-    if pd.Timestamp(TODAY_FDR) not in _close_check.index:
-        print(f"[종료] {TODAY_FDR}은 증권거래소 휴장일 — 실행 건너뜀")
+    # 주말(토·일)이면 조기 종료 (공휴일은 FDR 데이터에 없어 result 필터에서 자동 제외)
+    if _base.weekday() >= 5:
+        print(f"[종료] {TODAY_FDR}은 주말 — 실행 건너뜀")
         sys.exit(0)
 
+    _close_check = get_kospi_close()
     result_df = calc_k_fear_greed_index(index_close=_close_check)
 
     print("\n[최근 10일 인자별 점수 — KOSPI 전체]")
