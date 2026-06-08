@@ -336,8 +336,21 @@
     </div>
 
     <!-- K100지수 게이지 -->
-    <div class="card gauge-card">
+    <div class="card gauge-card" id="gaugeCardK100">
       <div class="gauge-universe-badge badge-k100">KOSPI 100</div>
+      <!-- 데이터 있을 때 표시 -->
+      <div id="gaugeK100DataWrap" style="display:none">
+        <div class="gauge-wrap">
+          <canvas id="gaugeK100" width="220" height="130"></canvas>
+          <div class="gauge-label">
+            <div class="score" id="scoreK100">—</div>
+            <div class="grade" id="gradeK100">—</div>
+          </div>
+        </div>
+        <div class="gauge-date" id="dateK100">—</div>
+        <div class="gauge-updated" id="updatedK100"></div>
+      </div>
+      <!-- 데이터 없을 때 -->
       <div id="gaugeK100Wrap">
         <div class="no-data-placeholder">
           <span class="icon">📊</span>
@@ -391,25 +404,7 @@
     <div class="table-row">
       <div class="table-section">
         <div style="font-size:0.76rem;font-weight:700;color:var(--k-color);margin-bottom:10px;">KOSPI 전체</div>
-        <div class="tbl-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>날짜</th>
-                <th>모멘텀</th>
-                <th>강도</th>
-                <th>폭</th>
-                <th class="pcr-col" style="display:none">풋/콜</th>
-                <th>신용</th>
-                <th>변동성</th>
-                <th>안전자산</th>
-                <th>K-지수</th>
-                <th>등급</th>
-              </tr>
-            </thead>
-            <tbody id="tableBodyK"></tbody>
-          </table>
-        </div>
+        <div class="tbl-scroll" id="tableWrapK"></div>
       </div>
       <div class="table-section">
         <div style="font-size:0.76rem;font-weight:700;color:var(--k100-color);margin-bottom:10px;">KOSPI 100</div>
@@ -425,32 +420,32 @@
   <!-- 인자 설명 -->
   <div class="card desc-card">
     <h2>인자별 산출 방법</h2>
-    <dl class="desc-list">
-      <div class="desc-item">
+    <dl class="desc-list" id="descList">
+      <div class="desc-item" data-factor="주가_모멘텀">
         <dt>주가 모멘텀</dt>
         <dd>KOSPI 종가 vs 125일 이동평균 — 종가가 MA 위에 있을수록 탐욕</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="주가_강도">
         <dt>주가 강도</dt>
         <dd>52주 신고가 종목 수 / (신고가 + 신저가) — 신고가 비율이 높을수록 탐욕</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="주가_폭">
         <dt>주가 폭</dt>
         <dd>거래량 기반 McClellan Summation Index — 상승 종목 거래량 비중이 높을수록 탐욕</dd>
       </div>
-      <div class="desc-item excluded">
+      <div class="desc-item" data-factor="풋콜_비율">
         <dt>풋/콜 비율</dt>
-        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — KRX API 인증 문제로 수집 보류</dd>
+        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위일수록 공포 (역방향) · 데이터 수집 중</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="신용스프레드">
         <dt>신용스프레드</dt>
         <dd>회사채 BBB- 3년물 − 국고채 3년물 — 스프레드가 좁을수록 탐욕 (역방향)</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="시장_변동성">
         <dt>시장 변동성</dt>
         <dd>KOSPI 20일 실현변동성 (연율화, VKOSPI 대체) — 변동성이 낮을수록 탐욕 (역방향)</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="안전자산_수요">
         <dt>안전자산 수요</dt>
         <dd>KOSPI 20일 수익률 − 국고채 3년물 20일 금리변화 — 주식 우세일수록 탐욕</dd>
       </div>
@@ -461,14 +456,52 @@
 
 <script>
 // ──────────────────────────────────────────
+// 상수: 인자가 아닌 메타 컬럼 목록
+// CSV 헤더에서 이것들을 제외한 나머지가 자동으로 인자 컬럼이 됨
+// ──────────────────────────────────────────
+const META_COLS = new Set([
+  "날짜", "K_탐욕공포지수", "등급", "업데이트_시각",
+  "CNN_탐욕공포지수", "CNN_등급", "신고가_종목수", "신저가_종목수",
+]);
+
+// 컬럼명 → 한글 표시명 (없으면 언더스코어를 공백으로 대체)
+const LABEL_MAP = {
+  "주가_모멘텀":   "주가 모멘텀",
+  "주가_강도":     "주가 강도",
+  "주가_폭":       "주가 폭",
+  "풋콜_비율":     "풋/콜 비율",
+  "신용스프레드":  "신용스프레드",
+  "시장_변동성":   "시장 변동성",
+  "안전자산_수요": "안전자산 수요",
+};
+// 테이블 축약 헤더
+const SHORT_MAP = {
+  "주가_모멘텀":   "모멘텀",
+  "주가_강도":     "강도",
+  "주가_폭":       "폭",
+  "풋콜_비율":     "풋/콜",
+  "신용스프레드":  "신용",
+  "시장_변동성":   "변동성",
+  "안전자산_수요": "안전자산",
+};
+
+function colLabel(col)  { return LABEL_MAP[col]  ?? col.replace(/_/g, " "); }
+function colShort(col)  { return SHORT_MAP[col]  ?? col.replace(/_/g, " "); }
+
+// CSV 헤더에서 인자 컬럼만 추출
+function getFactorCols(headers) {
+  return headers.filter(h => h && !META_COLS.has(h));
+}
+
+// ──────────────────────────────────────────
 // 유틸
 // ──────────────────────────────────────────
 const GRADE_MAP = {
-  "극단적 공포": { cls: "c-ef", bgCls: "bg-ef", hex: "#d32f2f" },
-  "공포":        { cls: "c-f",  bgCls: "bg-f",  hex: "#f57c00" },
-  "중립":        { cls: "c-n",  bgCls: "bg-n",  hex: "#fbc02d" },
-  "탐욕":        { cls: "c-g",  bgCls: "bg-g",  hex: "#388e3c" },
-  "극단적 탐욕": { cls: "c-eg", bgCls: "bg-eg", hex: "#1565c0" },
+  "극단적 공포": { bgCls: "bg-ef", hex: "#d32f2f" },
+  "공포":        { bgCls: "bg-f",  hex: "#f57c00" },
+  "중립":        { bgCls: "bg-n",  hex: "#fbc02d" },
+  "탐욕":        { bgCls: "bg-g",  hex: "#388e3c" },
+  "극단적 탐욕": { bgCls: "bg-eg", hex: "#1565c0" },
 };
 
 function scoreColor(score) {
@@ -488,12 +521,13 @@ function fmt(val) {
 function parseCSV(text) {
   const lines = text.replace(/^﻿/, "").trim().split("\n");
   const headers = lines[0].split(",").map(h => h.trim());
-  return lines.slice(1).map(line => {
+  const rows = lines.slice(1).map(line => {
     const vals = line.split(",").map(v => v.trim());
     const obj = {};
     headers.forEach((h, i) => obj[h] = vals[i] ?? "");
     return obj;
   });
+  return { headers, rows };
 }
 
 // ──────────────────────────────────────────
@@ -567,31 +601,25 @@ function drawGauge(canvasId, score) {
 }
 
 // ──────────────────────────────────────────
-// 인자별 바
+// 인자별 바 (factorCols: CSV에서 추출된 인자 컬럼 배열)
 // ──────────────────────────────────────────
-const FACTOR_LABELS = {
-  "주가_모멘텀":   "주가 모멘텀",
-  "주가_강도":     "주가 강도",
-  "주가_폭":       "주가 폭",
-  "풋콜_비율":     "풋/콜 비율",
-  "신용스프레드":  "신용스프레드",
-  "시장_변동성":   "시장 변동성",
-  "안전자산_수요": "안전자산 수요",
-};
-
-function renderFactorBars(containerId, row) {
+function renderFactorBars(containerId, row, factorCols) {
   const container = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = "";
-  const hasPCR = row["풋콜_비율"] && !isNaN(parseFloat(row["풋콜_비율"]));
-  Object.entries(FACTOR_LABELS).forEach(([key, label]) => {
-    if (key === "풋콜_비율" && !hasPCR) return;
-    const val = parseFloat(row[key]);
+
+  factorCols.forEach(key => {
+    // 값이 비어있는 인자는 표시 안 함
+    if (!row[key] || isNaN(parseFloat(row[key]))) return;
+
+    const val   = parseFloat(row[key]);
     const color = scoreColor(val);
-    const div = document.createElement("div");
+    const label = colLabel(key);
+    const div   = document.createElement("div");
     div.className = "factor-row";
 
     let extra = "";
-    if (key === "주가_강도" && containerId === "factorBarsK") {
+    if (key === "주가_강도") {
       const hi = parseInt(row["신고가_종목수"]);
       const lo = parseInt(row["신저가_종목수"]);
       if (!isNaN(hi) && !isNaN(lo)) {
@@ -606,7 +634,7 @@ function renderFactorBars(containerId, row) {
         <span class="factor-val" style="color:${color}">${fmt(val)}</span>
       </div>
       <div class="bar-track">
-        <div class="bar-fill" style="width:${isNaN(val) ? 0 : val}%;background:${color}"></div>
+        <div class="bar-fill" style="width:${val}%;background:${color}"></div>
       </div>
       ${extra}`;
     container.appendChild(div);
@@ -614,36 +642,56 @@ function renderFactorBars(containerId, row) {
 }
 
 // ──────────────────────────────────────────
-// 최근 10일 테이블
+// 최근 10일 테이블 (헤더 포함 전체를 동적 생성)
 // ──────────────────────────────────────────
-function renderTable(tbodyId, rows) {
-  const last10 = rows.slice(-10).reverse();
-  const tbody = document.getElementById(tbodyId);
-  if (!tbody) return;
-  tbody.innerHTML = "";
-  // 풋/콜 컬럼 표시 여부: 이 rows에 유효 데이터가 하나라도 있으면
-  const hasPCR = rows.some(r => r["풋콜_비율"] && !isNaN(parseFloat(r["풋콜_비율"])));
-  // 헤더 PCR 컬럼 토글
-  const tbl = tbody.closest("table");
-  if (tbl) tbl.querySelectorAll(".pcr-col").forEach(el => el.style.display = hasPCR ? "" : "none");
+function renderTable(wrapId, rows, factorCols, scoreLabel) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
 
-  last10.forEach(r => {
+  // 각 인자별 실제 유효값 존재 여부 확인 (빈 컬럼 헤더 제거)
+  const activeCols = factorCols.filter(col =>
+    rows.some(r => r[col] && !isNaN(parseFloat(r[col])))
+  );
+
+  // 테이블 헤더 동적 생성
+  const thCells = [`<th>날짜</th>`]
+    .concat(activeCols.map(col => `<th>${colShort(col)}</th>`))
+    .concat([`<th>${scoreLabel || "K-지수"}</th>`, `<th>등급</th>`])
+    .join("");
+
+  const last10 = rows.slice(-10).reverse();
+  const trRows = last10.map(r => {
     const score = parseFloat(r["K_탐욕공포지수"]);
     const grade = r["등급"] || "—";
     const ginfo = GRADE_MAP[grade] || { bgCls: "", hex: "#8b949e" };
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
+    const factorCells = activeCols.map(col => {
+      const v = parseFloat(r[col]);
+      return `<td style="color:${scoreColor(v)}">${fmt(r[col])}</td>`;
+    }).join("");
+    return `<tr>
       <td>${(r["날짜"] || "").slice(0, 10)}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}</td>
-      <td class="pcr-col" style="display:${hasPCR ? '' : 'none'};color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}</td>
-      <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}</td>
+      ${factorCells}
       <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
-      <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>`;
-    tbody.appendChild(tr);
+      <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>
+    </tr>`;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>${thCells}</tr></thead>
+      <tbody>${trRows}</tbody>
+    </table>`;
+}
+
+// ──────────────────────────────────────────
+// 설명 카드: CSV에 없는 인자는 취소선(excluded) 처리
+// ──────────────────────────────────────────
+function renderDescCard(factorCols) {
+  const colSet = new Set(factorCols);
+  document.querySelectorAll("#descList .desc-item[data-factor]").forEach(el => {
+    const col = el.dataset.factor;
+    const active = colSet.has(col);
+    el.classList.toggle("excluded", !active);
   });
 }
 
@@ -755,90 +803,66 @@ function renderHistoryChart(rowsK, rowsK100) {
 }
 
 // ──────────────────────────────────────────
-// K100 게이지 렌더 (데이터 있을 때)
+// K100 게이지: 플레이스홀더 숨기고 실제 데이터 표시
 // ──────────────────────────────────────────
-function renderK100Gauge(latest) {
-  const wrap = document.getElementById("gaugeK100Wrap");
-  const score = parseFloat(latest["K_탐욕공포지수"]);
-  const grade = latest["등급"] || "—";
-  const ginfo = GRADE_MAP[grade] || { hex: "#8b949e" };
-
-  wrap.innerHTML = `
-    <div class="gauge-wrap">
-      <canvas id="gaugeK100" width="220" height="130"></canvas>
-      <div class="gauge-label">
-        <div class="score" id="scoreK100" style="color:${ginfo.hex}">${score.toFixed(1)}</div>
-        <div class="grade">${grade}</div>
-      </div>
-    </div>
-    <div class="gauge-date">기준일: ${(latest["날짜"] || "").slice(0, 10)}</div>
-    <div class="gauge-updated">${latest["업데이트_시각"] ? `(업데이트: ${latest["업데이트_시각"]} KST)` : ""}</div>`;
-
-  drawGauge("gaugeK100", score);
-}
-
-function renderK100Table(rows) {
-  const wrap = document.getElementById("tableK100Wrap");
-  wrap.innerHTML = `
-    <div class="tbl-scroll">
-      <table>
-        <thead>
-          <tr>
-            <th>날짜</th><th>모멘텀</th><th>강도</th><th>폭</th>
-            <th class="pcr-col" style="display:none">풋/콜</th>
-            <th>신용</th><th>변동성</th><th>안전자산</th>
-            <th>K100-지수</th><th>등급</th>
-          </tr>
-        </thead>
-        <tbody id="tableBodyK100"></tbody>
-      </table>
-    </div>`;
-  renderTable("tableBodyK100", rows);
+function showK100Gauge() {
+  document.getElementById("gaugeK100Wrap").style.display = "none";
+  document.getElementById("gaugeK100DataWrap").style.display = "";
 }
 
 // ──────────────────────────────────────────
-// 렌더 메인
+// 렌더 메인 (K 또는 K100 공용)
 // ──────────────────────────────────────────
-function renderK(text) {
-  const rows = parseCSV(text).filter(r => r["날짜"] && r["K_탐욕공포지수"]);
-  if (!rows.length) return;
+function renderUniverse({ text, gaugeId, scoreId, gradeId, dateId, updatedId,
+                           factorBarsId, tableWrapId, scoreLabel, isMaster }) {
+  const { headers, rows: allRows } = parseCSV(text);
+  const rows = allRows.filter(r => r["날짜"] && r["K_탐욕공포지수"]);
+  if (!rows.length) return null;
 
+  const factorCols = getFactorCols(headers);
   const latest = rows[rows.length - 1];
   const score  = parseFloat(latest["K_탐욕공포지수"]);
   const grade  = latest["등급"] || "—";
   const ginfo  = GRADE_MAP[grade] || { hex: "#8b949e" };
 
-  drawGauge("gaugeK", score);
-  document.getElementById("scoreK").textContent = score.toFixed(1);
-  document.getElementById("scoreK").style.color = ginfo.hex;
-  document.getElementById("gradeK").textContent = grade;
-  document.getElementById("dateK").textContent = `기준일: ${latest["날짜"].slice(0, 10)}`;
-  const updTime = latest["업데이트_시각"];
-  document.getElementById("updatedK").textContent = updTime ? `(업데이트: ${updTime} KST)` : "";
+  // 게이지
+  drawGauge(gaugeId, score);
+  document.getElementById(scoreId).textContent = score.toFixed(1);
+  document.getElementById(scoreId).style.color = ginfo.hex;
+  document.getElementById(gradeId).textContent = grade;
+  document.getElementById(dateId).textContent = `기준일: ${latest["날짜"].slice(0, 10)}`;
+  const updEl = document.getElementById(updatedId);
+  if (updEl) updEl.textContent = latest["업데이트_시각"] ? `(업데이트: ${latest["업데이트_시각"]} KST)` : "";
 
-  // CNN 비교
-  const cnnScore = parseFloat(latest["CNN_탐욕공포지수"]);
-  const cnnRating = latest["CNN_등급"] || "";
-  if (!isNaN(cnnScore) && cnnRating) {
-    const CNN_KO = {
-      "extreme fear": { ko: "극단적 공포", hex: "#d32f2f" },
-      "fear":         { ko: "공포",        hex: "#f57c00" },
-      "neutral":      { ko: "중립",        hex: "#fbc02d" },
-      "greed":        { ko: "탐욕",        hex: "#388e3c" },
-      "extreme greed":{ ko: "극단적 탐욕", hex: "#1565c0" },
-    };
-    const info = CNN_KO[cnnRating.toLowerCase()] || { ko: cnnRating, hex: "var(--text)" };
-    document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
-    const el = document.getElementById("cnnRating");
-    el.textContent = `${info.ko} (${cnnRating})`;
-    el.style.color = info.hex;
-    document.getElementById("cnnCompare").style.display = "flex";
+  // CNN 비교 (K 메인에서만)
+  if (isMaster) {
+    const cnnScore  = parseFloat(latest["CNN_탐욕공포지수"]);
+    const cnnRating = latest["CNN_등급"] || "";
+    if (!isNaN(cnnScore) && cnnRating) {
+      const CNN_KO = {
+        "extreme fear": { ko: "극단적 공포", hex: "#d32f2f" },
+        "fear":         { ko: "공포",        hex: "#f57c00" },
+        "neutral":      { ko: "중립",        hex: "#fbc02d" },
+        "greed":        { ko: "탐욕",        hex: "#388e3c" },
+        "extreme greed":{ ko: "극단적 탐욕", hex: "#1565c0" },
+      };
+      const info = CNN_KO[cnnRating.toLowerCase()] || { ko: cnnRating, hex: "var(--text)" };
+      document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
+      const el = document.getElementById("cnnRating");
+      el.textContent = `${info.ko} (${cnnRating})`;
+      el.style.color = info.hex;
+      document.getElementById("cnnCompare").style.display = "flex";
+    }
+    // 설명 카드: K 기준 인자 목록으로 표시 제어
+    renderDescCard(factorCols);
   }
 
-  renderFactorBars("factorBarsK", latest);
-  renderTable("tableBodyK", rows);
+  // 인자 바
+  renderFactorBars(factorBarsId, latest, factorCols);
+  // 테이블 (헤더 포함 동적 생성)
+  renderTable(tableWrapId, rows, factorCols, scoreLabel);
 
-  return rows;
+  return { rows, factorCols };
 }
 
 // ──────────────────────────────────────────
@@ -850,7 +874,20 @@ async function init() {
   try {
     const res = await fetch("k_fear_greed_result.csv");
     if (!res.ok) throw new Error();
-    rowsK = renderK(await res.text());
+    const result = renderUniverse({
+      text:        await res.text(),
+      gaugeId:     "gaugeK",
+      scoreId:     "scoreK",
+      gradeId:     "gradeK",
+      dateId:      "dateK",
+      updatedId:   "updatedK",
+      factorBarsId:"factorBarsK",
+      tableWrapId: "tableWrapK",
+      scoreLabel:  "K-지수",
+      isMaster:    true,
+    });
+    if (!result) throw new Error("빈 데이터");
+    rowsK = result.rows;
   } catch {
     document.getElementById("loading").textContent = "⚠️ k_fear_greed_result.csv 로드 실패";
     return;
@@ -859,13 +896,20 @@ async function init() {
   try {
     const res = await fetch("k_fear_greed_result_k100.csv");
     if (!res.ok) throw new Error();
-    const rows = parseCSV(await res.text()).filter(r => r["날짜"] && r["K_탐욕공포지수"]);
-    if (rows.length) {
-      rowsK100 = rows;
-      renderK100Gauge(rows[rows.length - 1]);
-      renderFactorBars("factorBarsK100", rows[rows.length - 1]);
-      renderK100Table(rows);
-    }
+    showK100Gauge();  // 플레이스홀더 → 게이지 전환
+    const result = renderUniverse({
+      text:        await res.text(),
+      gaugeId:     "gaugeK100",
+      scoreId:     "scoreK100",
+      gradeId:     "gradeK100",
+      dateId:      "dateK100",
+      updatedId:   "updatedK100",
+      factorBarsId:"factorBarsK100",
+      tableWrapId: "tableK100Wrap",
+      scoreLabel:  "K100-지수",
+      isMaster:    false,
+    });
+    if (result) rowsK100 = result.rows;
   } catch {
     // K100 없으면 placeholder 유지
   }
