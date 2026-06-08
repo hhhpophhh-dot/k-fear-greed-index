@@ -148,9 +148,8 @@ def get_kospi_stock_data() -> dict:
     if _kospi_stock_cache is not None:
         return _kospi_stock_cache
 
-    # 종목 목록: FDR StockListing ('KOSPI') — KRX 로그인 불필요
-    kospi_list = fdr.StockListing("KOSPI")
-    tickers = kospi_list["Code"].tolist()
+    # 종목 목록: pykrx (FDR StockListing은 KRX URL 불안정으로 대체)
+    tickers = stock.get_market_ticker_list(TODAY, market="KOSPI")
 
     print(f"  KOSPI 전 종목 {len(tickers)}개 수집 중 (약 2~5분 소요)...")
 
