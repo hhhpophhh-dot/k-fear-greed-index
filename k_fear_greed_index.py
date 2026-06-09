@@ -142,16 +142,13 @@ _stock_market_cache: pd.DataFrame | None = None
 def _fetch_stock_market_day(date_str: str) -> dict | None:
     """
     KRX OpenAPI로 하루치 KOSPI 전 종목 매매정보 수집.
-    반환: {"adv_vol": int, "dec_vol": int, "new_highs": int, "new_lows": int,
-           "close": {종목코드: 종가}, ...} 또는 None
+    pykrx_openapi KRXOpenAPI.get_stock_market_daily_trade() 사용 (AUTH_KEY 인증 처리 포함)
     """
-    url = "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd"
-    headers = {"AUTH_KEY": KRX_AUTH_KEY}
-    params  = {"basDd": date_str}
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=30)
-        resp.raise_for_status()
-        rows = resp.json().get("OutBlock_1", [])
+        from pykrx_openapi import KRXOpenAPI
+        api = KRXOpenAPI(api_key=KRX_AUTH_KEY)
+        result = api.get_stock_market_daily_trade(bas_dd=date_str)
+        rows = result.get("OutBlock_1", [])
     except Exception as e:
         print(f"  [오류] {date_str} 수집 실패: {e}")
         return None
@@ -159,29 +156,24 @@ def _fetch_stock_market_day(date_str: str) -> dict | None:
     if not rows:
         return None
 
-    # KOSPI 종목만 필터 (시장구분 = KOSPI/유가증권)
+    # KOSPI 종목만 필터 (MKT_NM = KOSPI/유가증권)
     kospi_rows = [r for r in rows if "KOSPI" in str(r.get("MKT_NM", "")) or "유가증권" in str(r.get("MKT_NM", ""))]
     if not kospi_rows:
         kospi_rows = rows
 
     adv_vol = dec_vol = 0
-    closes = {}
     for r in kospi_rows:
         try:
-            vol  = int(str(r.get("ACC_TRDVOL", "0")).replace(",", "") or 0)
-            chg  = float(str(r.get("FLUC_RT", "0")).replace(",", "") or 0)
-            cls  = float(str(r.get("TDD_CLSPRC", "0")).replace(",", "") or 0)
-            code = str(r.get("ISU_CD", ""))
+            vol = int(str(r.get("ACC_TRDVOL", "0")).replace(",", "") or 0)
+            chg = float(str(r.get("FLUC_RT", "0")).replace(",", "") or 0)
             if chg > 0:
                 adv_vol += vol
             elif chg < 0:
                 dec_vol += vol
-            if cls > 0 and code:
-                closes[code] = cls
         except Exception:
             continue
 
-    return {"adv_vol": adv_vol, "dec_vol": dec_vol, "closes": closes}
+    return {"adv_vol": adv_vol, "dec_vol": dec_vol}
 
 
 def get_stock_market_data(trading_days: pd.DatetimeIndex = None) -> pd.DataFrame | None:
@@ -739,7 +731,8 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
     result_df.index.name = "날짜"
     base_factors = ["주가_모멘텀", "주가_강도", "주가_폭",
                     "신용스프레드", "시장_변동성", "안전자산_수요"]
-    result_clean = result_df.dropna(subset=base_factors)
+    existing_factors = [c for c in base_factors if c in result_df.columns]
+    result_clean = result_df.dropna(subset=existing_factors)
     for col in ["신고가_종목수", "신저가_종목수"]:
         if col in result_clean.columns:
             result_clean[col] = result_clean[col].where(
