@@ -735,9 +735,8 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
     result_clean = result_df.dropna(subset=existing_factors)
     for col in ["신고가_종목수", "신저가_종목수"]:
         if col in result_clean.columns:
-            result_clean[col] = result_clean[col].where(
-                result_clean[col].isna(), result_clean[col].astype(int)
-            )
+            non_null = result_clean[col].notna()
+            result_clean.loc[non_null, col] = result_clean.loc[non_null, col].astype(int)
     result_clean.to_csv(output_path, encoding="utf-8-sig")
     print(f"결과 저장: {output_path} ({len(result_clean)}행)")
 
