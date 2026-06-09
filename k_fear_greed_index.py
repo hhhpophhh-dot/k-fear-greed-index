@@ -704,9 +704,10 @@ if __name__ == "__main__":
     result_df = calc_k_fear_greed_index(index_close=_close_check)
 
     print("\n[최근 10일 인자별 점수 — KOSPI 전체]")
-    factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
-                   "신용스프레드", "시장_변동성", "안전자산_수요",
-                   "K_탐욕공포지수", "등급"]
+    all_factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
+                       "신용스프레드", "시장_변동성", "안전자산_수요",
+                       "K_탐욕공포지수", "등급"]
+    factor_cols = [c for c in all_factor_cols if c in result_df.columns]
     print(result_df[factor_cols].tail(10).to_string())
 
     cnn_score, cnn_rating = fetch_cnn_fear_greed()
