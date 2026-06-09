@@ -163,7 +163,8 @@ def get_kospi_stock_data() -> dict:
                 print(f"  [재시도] 종목 목록: {date_str} 기준 사용")
             break
     if not tickers:
-        raise RuntimeError("KRX 종목 목록 수집 실패 — 최근 10 거래일 모두 빈 응답")
+        print("  [경고] KRX 종목 목록 수집 실패 — 최근 10 거래일 모두 빈 응답, 주가_강도·주가_폭 NaN 처리")
+        return None
 
     print(f"  KOSPI 전 종목 {len(tickers)}개 수집 중 (약 2~5분 소요)...")
 
@@ -230,6 +231,8 @@ def calc_price_strength(_stock_data: dict = None):
     print("[2/7] 주가 강도 계산 중...")
 
     data = _stock_data if _stock_data is not None else get_kospi_stock_data()
+    if data is None:
+        return pd.Series(dtype=float), pd.Series(dtype=float), pd.Series(dtype=float)
     close_df = data["close"]
 
     rolling_high = close_df.rolling(window=252).max()
@@ -268,6 +271,8 @@ def calc_market_breadth(_stock_data: dict = None) -> pd.Series:
     print("[3/7] 주가 폭 (McClellan Summation) 계산 중...")
 
     data = _stock_data if _stock_data is not None else get_kospi_stock_data()
+    if data is None:
+        return pd.Series(dtype=float)
     vol_df = data["volume"]
     chg_df = data["change"]
 
@@ -567,11 +572,18 @@ def calc_k_fear_greed_index(
         print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
     strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
+    breadth_series = calc_market_breadth(_stock_data=stock_data)
     factors = {
-        "주가_모멘텀":   calc_price_momentum(_close=_index_close),
-        "주가_강도":     strength_series,
-        "주가_폭":       calc_market_breadth(_stock_data=stock_data),
+        "주가_모멘텀": calc_price_momentum(_close=_index_close),
     }
+    if not strength_series.empty:
+        factors["주가_강도"] = strength_series
+    else:
+        print("  [경고] 주가_강도 수집 실패 — 인자 제외 (전일값 사용)")
+    if not breadth_series.empty:
+        factors["주가_폭"] = breadth_series
+    else:
+        print("  [경고] 주가_폭 수집 실패 — 인자 제외 (전일값 사용)")
     if pcr_series is not None:
         factors["풋콜_비율"] = pcr_series
     factors["신용스프레드"]  = calc_credit_spread()
