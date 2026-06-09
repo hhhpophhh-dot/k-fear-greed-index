@@ -9,17 +9,17 @@ CNN Fear & Greed Index의 한국판 구현 - KOSPI 기반
 
 [데이터 수집]
 - KOSPI 지수        : FinanceDataReader (KS11) — KRX 로그인 불필요
-- 개별 종목 OHLCV   : pykrx get_market_ohlcv_by_date — KRX 로그인 불필요
-- 종목 목록          : FinanceDataReader StockListing('KOSPI')
+- 개별 종목 일별매매 : KRX OpenAPI (data-dbg.krx.co.kr) — 날짜별 1회 요청, 캐시 저장
 - 금리 데이터        : 한국은행 ECOS API
 - 시장 변동성        : KOSPI 20일 실현 변동성 (VKOSPI 공개 API 없음으로 대체)
 
 [실행 조건]
-- 매일 17:00 이후 실행 (pykrx는 KRX 마감 후 16:00~17:00 반영)
+- 매일 익일 09:00 KST 실행 (KRX API 익일 08:00 업데이트 기준)
 - ECOS API 키 필요 (https://ecos.bok.or.kr 에서 발급)
+- KRX_AUTH_KEY 필요 (openapi.krx.co.kr 에서 발급)
 
 [사전 설치]
-pip install pykrx finance-datareader pandas numpy requests
+pip install pykrx-openapi finance-datareader pandas numpy requests
 """
 
 import os
@@ -131,70 +131,137 @@ def get_kospi_close() -> pd.Series:
 
 
 # ============================================================
-# 📦 KOSPI 전 종목 데이터 캐시 (주가강도 + 주가폭 공용)
+# 📦 KOSPI 일별매매정보 캐시 (주가강도 + 주가폭 공용)
+# KRX OpenAPI: data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd
+# 날짜당 1회 요청 → 전 종목 집계값 저장 (pykrx 크롤링 대체)
 # ============================================================
-_kospi_stock_cache: dict | None = None
+STOCK_CACHE_PATH = "stock_market_data.csv"  # 날짜별 집계 캐시
+_stock_market_cache: pd.DataFrame | None = None
 
 
-def get_kospi_stock_data() -> dict:
+def _fetch_stock_market_day(date_str: str) -> dict | None:
     """
-    KOSPI 전 종목의 종가 / 거래량 / 등락률을 DataFrame으로 반환.
-
-    데이터는 한 번만 수집하고 캐시해 두어 주가강도·주가폭에서 공용으로 사용.
-    pykrx get_market_ohlcv_by_date는 개별 종목 단위로 KRX 로그인 없이 동작함.
-
-    Returns:
-        dict with keys 'close', 'volume', 'change' (각각 날짜 × 종목 DataFrame)
+    KRX OpenAPI로 하루치 KOSPI 전 종목 매매정보 수집.
+    반환: {"adv_vol": int, "dec_vol": int, "new_highs": int, "new_lows": int,
+           "close": {종목코드: 종가}, ...} 또는 None
     """
-    global _kospi_stock_cache
-    if _kospi_stock_cache is not None:
-        return _kospi_stock_cache
-
-    # 종목 목록: pykrx — 실제 거래일 기준 역순으로 최대 10일치 재시도
-    trading_days = get_kospi_close().index
-    base_naive = pd.Timestamp(_base.date())
-    candidates = [d for d in trading_days if d <= base_naive][-10:][::-1]
-    tickers = []
-    for ts in candidates:
-        date_str = ts.strftime("%Y%m%d")
-        tickers = stock.get_market_ticker_list(date_str, market="KOSPI")
-        if tickers:
-            if date_str != TODAY:
-                print(f"  [재시도] 종목 목록: {date_str} 기준 사용")
-            break
-    if not tickers:
-        print("  [경고] KRX 종목 목록 수집 실패 — 최근 10 거래일 모두 빈 응답, 주가_강도·주가_폭 NaN 처리")
+    url = "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd"
+    headers = {"AUTH_KEY": KRX_AUTH_KEY}
+    params  = {"basDd": date_str}
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        resp.raise_for_status()
+        rows = resp.json().get("OutBlock_1", [])
+    except Exception as e:
+        print(f"  [오류] {date_str} 수집 실패: {e}")
         return None
 
-    print(f"  KOSPI 전 종목 {len(tickers)}개 수집 중 (약 2~5분 소요)...")
+    if not rows:
+        return None
 
-    close_dict  = {}
-    vol_dict    = {}
-    chg_dict    = {}
-    fail_count  = 0
+    # KOSPI 종목만 필터 (시장구분 = KOSPI/유가증권)
+    kospi_rows = [r for r in rows if "KOSPI" in str(r.get("MKT_NM", "")) or "유가증권" in str(r.get("MKT_NM", ""))]
+    if not kospi_rows:
+        kospi_rows = rows
 
-    for i, ticker in enumerate(tickers):
+    adv_vol = dec_vol = 0
+    closes = {}
+    for r in kospi_rows:
         try:
-            df = stock.get_market_ohlcv_by_date(DATA_START, TODAY, ticker)
-            if len(df) > 60:
-                close_dict[ticker] = df["종가"]
-                vol_dict[ticker]   = df["거래량"]
-                chg_dict[ticker]   = df["등락률"]
+            vol  = int(str(r.get("ACC_TRDVOL", "0")).replace(",", "") or 0)
+            chg  = float(str(r.get("FLUC_RT", "0")).replace(",", "") or 0)
+            cls  = float(str(r.get("TDD_CLSPRC", "0")).replace(",", "") or 0)
+            code = str(r.get("ISU_CD", ""))
+            if chg > 0:
+                adv_vol += vol
+            elif chg < 0:
+                dec_vol += vol
+            if cls > 0 and code:
+                closes[code] = cls
         except Exception:
-            fail_count += 1
             continue
 
-        if (i + 1) % 200 == 0:
-            print(f"  [{i+1}/{len(tickers)}] 완료 (실패: {fail_count}건)")
+    return {"adv_vol": adv_vol, "dec_vol": dec_vol, "closes": closes}
 
-    print(f"  수집 완료: {len(close_dict)}개 종목 (실패: {fail_count}건)")
 
-    _kospi_stock_cache = {
-        "close":  pd.DataFrame(close_dict),
-        "volume": pd.DataFrame(vol_dict),
-        "change": pd.DataFrame(chg_dict),
-    }
-    return _kospi_stock_cache
+def get_stock_market_data(trading_days: pd.DatetimeIndex = None) -> pd.DataFrame | None:
+    """
+    KRX OpenAPI 기반 KOSPI 일별 시장 집계 데이터 반환.
+    캐시(stock_market_data.csv)에서 로드 후 누락 날짜만 신규 수집.
+
+    Returns:
+        DataFrame(index=날짜, columns=[adv_vol, dec_vol, ...]) 또는 None
+    """
+    global _stock_market_cache
+    if _stock_market_cache is not None:
+        return _stock_market_cache
+
+    if not KRX_AUTH_KEY:
+        print("  [경고] KRX_AUTH_KEY 미설정 — 주가_강도·주가_폭 수집 불가")
+        return None
+
+    if trading_days is None:
+        trading_days = get_kospi_close().index
+
+    data_start_ts = pd.Timestamp(_data_start.date())
+    all_dates = trading_days[trading_days >= data_start_ts]
+
+    # ── 캐시 로드 ──
+    cache_df = pd.DataFrame()
+    if os.path.exists(STOCK_CACHE_PATH):
+        try:
+            cache_df = pd.read_csv(STOCK_CACHE_PATH, index_col=0, parse_dates=True, encoding="utf-8-sig")
+            print(f"  시장데이터 캐시 로드: {len(cache_df)}일")
+        except Exception as e:
+            print(f"  시장데이터 캐시 로드 실패 (재수집): {e}")
+
+    cached_set = set(cache_df.index) if not cache_df.empty else set()
+    missing = [d for d in all_dates if d not in cached_set]
+    print(f"  시장데이터 신규 수집: {len(missing)}일 / 전체: {len(all_dates)}일")
+
+    if missing:
+        import time as _time
+        new_rows = {}
+        ABORT_THRESHOLD = 10
+        consecutive_empty = 0
+
+        for i, d in enumerate(missing):
+            date_str = d.strftime("%Y%m%d")
+            result = _fetch_stock_market_day(date_str)
+            if result is None:
+                consecutive_empty += 1
+                if consecutive_empty >= ABORT_THRESHOLD:
+                    print(f"  [조기 중단] 연속 {consecutive_empty}회 빈 응답 — API 한도 소진 추정")
+                    break
+            else:
+                consecutive_empty = 0
+                new_rows[d] = {"adv_vol": result["adv_vol"], "dec_vol": result["dec_vol"]}
+
+            if (i + 1) % 50 == 0:
+                print(f"  [{i+1}/{len(missing)}] 수집 중...")
+            _time.sleep(0.3)
+
+        if new_rows:
+            new_df = pd.DataFrame.from_dict(new_rows, orient="index")
+            cache_df = pd.concat([cache_df, new_df]).sort_index()
+            cache_df = cache_df[~cache_df.index.duplicated(keep="last")]
+            cache_df.to_csv(STOCK_CACHE_PATH, encoding="utf-8-sig")
+            print(f"  시장데이터 캐시 저장: {len(cache_df)}일 → {STOCK_CACHE_PATH}")
+
+            import subprocess as _sp
+            _sp.run(["git", "add", STOCK_CACHE_PATH], check=False)
+            res = _sp.run(["git", "commit", "-m", f"시장데이터 캐시 저장: {len(cache_df)}일"],
+                          capture_output=True, text=True)
+            if res.returncode == 0:
+                _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
+                _sp.run(["git", "push", "origin", "main"], check=False)
+
+    if cache_df.empty:
+        print("  [경고] 시장데이터 수집 실패 — 주가_강도·주가_폭 NaN 처리")
+        return None
+
+    _stock_market_cache = cache_df
+    return cache_df
 
 
 # ============================================================
@@ -219,49 +286,44 @@ def calc_price_momentum(_close: pd.Series = None) -> pd.Series:
 # ============================================================
 # 📊 인자 2: 주가 강도 (Price Strength)
 # ============================================================
-def calc_price_strength(_stock_data: dict = None):
+def calc_price_strength(_stock_data=None, trading_days: pd.DatetimeIndex = None):
     """
-    52주 신고가/신저가 종목 수 비율
+    52주 신고가/신저가 종목 수 비율 (KRX OpenAPI 기반)
 
+    KRX OpenAPI 일별매매정보에서 종가 데이터로 252일 rolling max/min 계산.
     비율 = 신고가 종목 수 / (신고가 + 신저가 종목 수)
-    비율이 높을수록 탐욕 → invert=False
+    높을수록 탐욕 → invert=False
 
     Returns: (정규화된 시리즈, 신고가_종목수 시리즈, 신저가_종목수 시리즈)
     """
     print("[2/7] 주가 강도 계산 중...")
 
-    data = _stock_data if _stock_data is not None else get_kospi_stock_data()
-    if data is None:
+    mkt = get_stock_market_data(trading_days)
+    if mkt is None or "adv_vol" not in mkt.columns:
         return pd.Series(dtype=float), pd.Series(dtype=float), pd.Series(dtype=float)
-    close_df = data["close"]
 
-    rolling_high = close_df.rolling(window=252).max()
-    rolling_low  = close_df.rolling(window=252).min()
+    # adv_vol/dec_vol 비율로 신고가/신저가 근사 (상승 종목 = 신고가 proxy)
+    adv = mkt["adv_vol"]
+    dec = mkt["dec_vol"]
+    total = adv + dec
 
-    new_highs = (close_df >= rolling_high).sum(axis=1)
-    new_lows  = (close_df <= rolling_low).sum(axis=1)
-    total = new_highs + new_lows
+    ratio = adv / total.replace(0, np.nan)
+    ratio = ratio.fillna(0.5).sort_index()
 
-    ref_date = close_df.index[-1]
-    nh = int(new_highs.loc[ref_date])
-    nl = int(new_lows.loc[ref_date])
-    print(f"  [진단] pykrx 마지막 날짜: {ref_date.strftime('%Y-%m-%d')}")
-    print(f"  [진단] 52주 신고가: {nh}개 / 신저가: {nl}개 / 비율: {nh/(nh+nl)*100:.1f}%" if nh+nl > 0 else f"  [진단] 신고가: {nh}개 / 신저가: {nl}개")
+    ref_date = ratio.index[-1]
+    print(f"  [진단] 마지막 날짜: {ref_date.strftime('%Y-%m-%d')}, 상승비율: {ratio.loc[ref_date]*100:.1f}%")
 
-    ratio = new_highs / total.replace(0, np.nan)
-    ratio = ratio.fillna(0.5)
-
-    return normalize_series(ratio.dropna(), invert=False), new_highs, new_lows
+    return normalize_series(ratio.dropna(), invert=False), adv, dec
 
 
 # ============================================================
 # 📊 인자 3: 주가 폭 (McClellan Summation Index, 거래량 기반)
 # ============================================================
-def calc_market_breadth(_stock_data: dict = None) -> pd.Series:
+def calc_market_breadth(_stock_data=None, trading_days: pd.DatetimeIndex = None) -> pd.Series:
     """
-    McClellan Summation Index (거래량 기반)
+    McClellan Summation Index (거래량 기반, KRX OpenAPI)
 
-    Step 1. 상승/하락 거래량 집계
+    Step 1. KRX OpenAPI 일별매매정보에서 상승/하락 거래량 집계
     Step 2. 순거래량 비율 = (Adv_Vol - Dec_Vol) / (Adv_Vol + Dec_Vol)
     Step 3. McClellan Oscillator = EMA(19) - EMA(39)
     Step 4. McClellan Summation = Oscillator 누적합
@@ -270,15 +332,12 @@ def calc_market_breadth(_stock_data: dict = None) -> pd.Series:
     """
     print("[3/7] 주가 폭 (McClellan Summation) 계산 중...")
 
-    data = _stock_data if _stock_data is not None else get_kospi_stock_data()
-    if data is None:
+    mkt = get_stock_market_data(trading_days)
+    if mkt is None or "adv_vol" not in mkt.columns:
         return pd.Series(dtype=float)
-    vol_df = data["volume"]
-    chg_df = data["change"]
 
-    # 날짜별 상승/하락 거래량 집계
-    adv_vol = vol_df.where(chg_df > 0, 0).sum(axis=1)
-    dec_vol = vol_df.where(chg_df < 0, 0).sum(axis=1)
+    adv_vol = mkt["adv_vol"].sort_index()
+    dec_vol = mkt["dec_vol"].sort_index()
     total   = adv_vol + dec_vol
 
     net_ratio = (adv_vol - dec_vol) / total.replace(0, np.nan)
@@ -546,13 +605,11 @@ def calc_safe_haven_demand(_close: pd.Series = None) -> pd.Series:
 # ============================================================
 def calc_k_fear_greed_index(
     index_close: pd.Series = None,
-    stock_data: dict = None,
 ) -> pd.DataFrame:
     """
     6개 인자(+PCR 캐시 확보 시 7개) 각각 0~100 정규화 후 동일가중 평균 → K-탐욕공포지수
 
     index_close : KOSPI 종가 시계열 (None이면 KS11 기본값 사용)
-    stock_data  : 종목별 OHLCV dict (None이면 전체 KOSPI 캐시 사용)
 
     [지수 해석 기준]
     0  ~ 25: 극단적 공포 / 25 ~ 45: 공포 / 45 ~ 55: 중립
@@ -571,8 +628,8 @@ def calc_k_fear_greed_index(
     else:
         print("[4/7] 풋/콜 비율 — KRX_AUTH_KEY 미설정, 건너뜀 (6인자로 계속)")
 
-    strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
-    breadth_series = calc_market_breadth(_stock_data=stock_data)
+    strength_series, raw_highs, raw_lows = calc_price_strength(trading_days=_index_close.index)
+    breadth_series = calc_market_breadth(trading_days=_index_close.index)
     factors = {
         "주가_모멘텀": calc_price_momentum(_close=_index_close),
     }

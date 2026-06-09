@@ -42,7 +42,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in k_fear_greed_result.csv k_fear_greed_result_k100.csv pcr_raw_data.csv; do
+          for f in k_fear_greed_result.csv k_fear_greed_result_k100.csv pcr_raw_data.csv stock_market_data.csv; do
             [ -f "$f" ] && git add "$f" || echo "건너뜀 (파일 없음): $f"
           done
           git diff --staged --quiet || git commit -m "데이터 업데이트: $(TZ='Asia/Seoul' date +'%Y-%m-%d')"
