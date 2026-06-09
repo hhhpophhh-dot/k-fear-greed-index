@@ -16,11 +16,11 @@ CNN 탐욕공포지수를 KOSPI에 적용한 K-탐욕공포지수 개발 및 시
 
 ## 주요 파일
 - `k_fear_greed_index.py` — 메인 산출 코드
-- `k_fear_greed_result.csv` — 결과 저장
-- `pcr_raw_data.csv` — PCR 캐시 (incremental 수집)
-- `.github/workflows/update_k.yml` — GitHub Actions (timeout 60분)
+- `k_fear_greed_result.csv` — 결과 저장 (매 실행 시 전체 재생성)
+- `pcr_raw_data.csv` — PCR 캐시 (incremental 수집, git 커밋 보존)
+- `.github/workflows/update.yml` — GitHub Actions 메인 워크플로우 (K + K100 통합)
 
-## PCR (풋/콜 비율) 수집 현황
+## PCR (풋/콜 비율) 수집
 
 ### API 정보
 - KRX Open API (`data-dbg.krx.co.kr/svc/apis/drv/opt_bydd_trd`)
@@ -34,35 +34,49 @@ CNN 탐욕공포지수를 KOSPI에 적용한 K-탐욕공포지수 개발 및 시
  'CMPPREVDD_PRC', 'TDD_OPNPRC', 'TDD_HGPRC', 'TDD_LWPRC', 'IMP_VOLT',
  'NXTDD_BAS_PRC', 'ACC_TRDVOL', 'ACC_TRDVAL', 'ACC_OPNINT_QTY']
 ```
-- `RGHT_TP_NM` 실제 값: `"CALL"` / `"PUT"` (영어, 스펙: 권리유형(CALL/PUT))
+- `RGHT_TP_NM` 실제 값: `"CALL"` / `"PUT"` (영어)
 - KOSPI200 필터: `PROD_NM` 또는 `ISU_NM` 에 "KOSPI200" 포함 여부
 
 ### 수집 로직
 - 배치 크기: 50건, 요청 간 딜레이 0.5초, 배치 간 15초 대기, max_workers=2
-- 신규 데이터 있을 때만 캐시 저장 + git push (중단 시 보존 목적)
-- PCR 수집 → 주가강도 순서로 실행
+- **캐시 gap 검사**: `cached_set` 기반으로 전체 목표 날짜 중 누락된 날짜 전부 수집 (last_cached 이후만이 아님)
+- **abort**: `consecutive_empty >= PCR_ABORT_THRESHOLD` 시 `executor.shutdown(wait=False, cancel_futures=True)`로 완전 중단
+- **trading day 기준**: `get_kospi_close().index` (bdate_range 아님) → 실제 거래일만 수집 대상
 
-### 현재 캐시 상태 (2026-06-06 기준)
-- 캐시: 389일 (2024-10-24 ~ 2026-06-01)
-- **미수집: 2026-06-02, 06-04, 06-05** (3일) → 풋콜_비율 NaN
-- 원인: API 일일 한도 소진으로 최근 날짜 수집 미완료
-- 다음 워크플로우 실행 시 자동 수집 예정
+### 캐시 상태 (2026-06-09 기준)
+- 캐시: 391일 (2024-10-24 ~ 2026-06-04)
+- 미수집: 2026-06-05, 06-08 → 다음 실행 시 cached_set 로직으로 자동 수집
+- 정상 동작: 첫 252거래일 이전은 풋콜_비율 NaN (rolling normalize window)
 
-## GitHub Actions
-- 워크플로우: `update_k.yml`, timeout 60분
-- MCP를 통한 트리거: `mcp__github__actions_run_trigger` 사용
-- MCP 연결이 끊겼을 경우: PAT(Personal Access Token)으로 curl API 호출 가능
-  - `curl -s -H "Authorization: token <PAT>" "https://api.github.com/repos/hhhpophhh-dot/k-fear-greed-index/actions/workflows/update_k.yml/dispatches" -X POST -d '{"ref":"main"}'`
+## GitHub Actions 스케줄
 
-## 주요 결정 사항
-- K100 지수 관련 코드는 이 대화에서 수정하지 않음
-- PCR 외 항목(주가강도 등)은 pykrx 라이브러리 사용 (KRX Open API와 별개)
-- 캐시 파일은 git에 커밋하여 워크플로우 재시작 시에도 보존
+### update.yml (메인 — K + K100 통합)
+```yaml
+cron: '0 0 * * 2-6'   # KST 화~토 09:00 (UTC 00:00)
+```
+- **전날 데이터를 다음날 09:00 KST에 수집** (KRX API 익일 08:00 업데이트 기준)
+- CUTOFF_HOUR=17이므로 09:00 실행 시 자동으로 전날 기준 사용
+- 예: 화요일 09:00 실행 → 월요일 데이터 수집
+
+### update_k.yml, update_k100.yml
+- workflow_dispatch 전용 (수동 실행만, 스케줄 없음)
+
+## 주요 데이터 처리 규칙
+- **거래일 필터**: `result = result[result.index.isin(_index_close.index)]` → 공휴일·주말 데이터 자동 제거
+- **주말 조기 종료**: `if _base.weekday() >= 5: sys.exit(0)` (공휴일은 result 필터에서 자동 처리)
+- **KOSPI 종목 목록**: pykrx `get_market_ticker_list` — 실패 시 최대 7일 이내 날짜로 재시도, 모두 실패 시 RuntimeError
+
+## index.html 전일값 표시
+- 인자값이 NaN인 경우 직전 거래일 값으로 forward-fill (JS `applyForwardFill()`)
+- forward-fill된 값은 "전일" 배지로 표시 (CSS `.est-badge`)
+- 팩터바 및 테이블 모두 적용
 
 ## 과거 주요 버그 및 수정 이력
-1. **API 필드명 오류** (수정 완료): pykrx 스타일 camelCase → 실제 UPPERCASE_UNDERSCORE
-   - `itmNm` → `PROD_NM`, `rghtTpCd` → `RGHT_TP_NM`, `acmlTrdvol` → `ACC_TRDVOL`
-   - `"C"/"P"` → `"CALL"/"PUT"` (실제 API 영어값)
+1. **API 필드명 오류** (수정 완료): `itmNm` → `PROD_NM`, `"C"/"P"` → `"CALL"/"PUT"`
 2. **캐시 조건 버그** (수정 완료): 신규 데이터 없어도 캐시 덮어쓰기 → `if new_data:` 조건 추가
-3. **실행 순서** (수정 완료): 주가강도 먼저 실행 → PCR 먼저 실행
-4. **워크플로우 타임아웃** (수정 완료): 30분 → 60분
+3. **PCR gap 미재시도** (수정 완료): `last_cached` 이후만 수집 → `cached_set` 전체 gap 검사로 변경
+4. **PCR abort 미작동** (수정 완료): `executor.shutdown(wait=False, cancel_futures=True)` 추가
+5. **공휴일 데이터 포함** (수정 완료): ECOS 채권금리 공휴일에도 반환 → 거래일 필터로 제거
+6. **FDR 종목 목록 404** (수정 완료): `fdr.StockListing("KOSPI")` → pykrx 7일 재시도로 대체
+7. **스케줄 당일 수집 불가** (수정 완료): 같은 날 19:00 KST → 다음날 09:00 KST로 변경
+8. **워크플로우 actions 버전** (수정 완료): checkout@v4→v5, setup-python@v5→v6
