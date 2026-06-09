@@ -152,7 +152,8 @@ def get_kospi_stock_data() -> dict:
 
     # 종목 목록: pykrx — 실제 거래일 기준 역순으로 최대 10일치 재시도
     trading_days = get_kospi_close().index
-    candidates = [d for d in trading_days if d <= pd.Timestamp(_base)][-10:][::-1]
+    base_naive = pd.Timestamp(_base.date())
+    candidates = [d for d in trading_days if d <= base_naive][-10:][::-1]
     tickers = []
     for ts in candidates:
         date_str = ts.strftime("%Y%m%d")
