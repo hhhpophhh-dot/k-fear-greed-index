@@ -150,17 +150,19 @@ def get_kospi_stock_data() -> dict:
     if _kospi_stock_cache is not None:
         return _kospi_stock_cache
 
-    # 종목 목록: pykrx — 당일 조회 실패 시 최대 7일 이내 날짜로 재시도
-    tickers = stock.get_market_ticker_list(TODAY, market="KOSPI")
+    # 종목 목록: pykrx — 실제 거래일 기준 역순으로 최대 10일치 재시도
+    trading_days = get_kospi_close().index
+    candidates = [d for d in trading_days if d <= pd.Timestamp(_base)][-10:][::-1]
+    tickers = []
+    for ts in candidates:
+        date_str = ts.strftime("%Y%m%d")
+        tickers = stock.get_market_ticker_list(date_str, market="KOSPI")
+        if tickers:
+            if date_str != TODAY:
+                print(f"  [재시도] 종목 목록: {date_str} 기준 사용")
+            break
     if not tickers:
-        for days_back in range(1, 8):
-            fallback = (_base - timedelta(days=days_back)).strftime("%Y%m%d")
-            tickers = stock.get_market_ticker_list(fallback, market="KOSPI")
-            if tickers:
-                print(f"  [재시도] 종목 목록: {fallback} 기준 사용")
-                break
-    if not tickers:
-        raise RuntimeError("KRX 종목 목록 수집 실패 — 7일 이내 모든 날짜에서 빈 응답")
+        raise RuntimeError("KRX 종목 목록 수집 실패 — 최근 10 거래일 모두 빈 응답")
 
     print(f"  KOSPI 전 종목 {len(tickers)}개 수집 중 (약 2~5분 소요)...")
 
