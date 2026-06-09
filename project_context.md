@@ -64,7 +64,14 @@ cron: '0 0 * * 2-6'   # KST 화~토 09:00 (UTC 00:00)
 ## 주요 데이터 처리 규칙
 - **거래일 필터**: `result = result[result.index.isin(_index_close.index)]` → 공휴일·주말 데이터 자동 제거
 - **주말 조기 종료**: `if _base.weekday() >= 5: sys.exit(0)` (공휴일은 result 필터에서 자동 처리)
-- **KOSPI 종목 목록**: pykrx `get_market_ticker_list` — 실패 시 최대 7일 이내 날짜로 재시도, 모두 실패 시 RuntimeError
+- **KOSPI 종목 목록**: pykrx `get_market_ticker_list` — IP 차단으로 현재 동작 불가 (아래 개선 계획 참고)
+
+## 주가_강도·주가_폭 개선 계획 (진행 중)
+- **현재 문제**: pykrx(`data.krx.co.kr`) IP 차단 → 주가_강도·주가_폭 수집 불가, 현재 NaN 처리 중
+- **원인**: GitHub Actions Azure IP 대역이 KRX에 의해 차단됨 (비공식 크롤링 차단 정책)
+- **대안 방향**: KRX OpenAPI(`openapi.krx.co.kr`) 공식 API로 전환 — KRX_AUTH_KEY 이미 보유
+- **필요한 엔드포인트**: 신고가/신저가 종목 수 또는 상승/하락 거래량 일별 집계 데이터
+- **구현 대기 조건**: openapi.krx.co.kr 명세서 확인 후 진행
 
 ## index.html 전일값 표시
 - 인자값이 NaN인 경우 직전 거래일 값으로 forward-fill (JS `applyForwardFill()`)
