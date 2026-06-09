@@ -647,8 +647,6 @@ def calc_k_fear_greed_index(
     # 증권거래소 영업일만 유지 (ECOS 채권 데이터는 공휴일·주말도 포함하므로)
     result = result[result.index.isin(_index_close.index)]
 
-    result["신고가_종목수"] = raw_highs.reindex(result.index)
-    result["신저가_종목수"] = raw_lows.reindex(result.index)
     result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
 
     def label(score):
@@ -733,10 +731,6 @@ def _save_result(result_df: pd.DataFrame, output_path: str):
                     "신용스프레드", "시장_변동성", "안전자산_수요"]
     existing_factors = [c for c in base_factors if c in result_df.columns]
     result_clean = result_df.dropna(subset=existing_factors)
-    for col in ["신고가_종목수", "신저가_종목수"]:
-        if col in result_clean.columns:
-            non_null = result_clean[col].notna()
-            result_clean.loc[non_null, col] = result_clean.loc[non_null, col].astype(int)
     result_clean.to_csv(output_path, encoding="utf-8-sig")
     print(f"결과 저장: {output_path} ({len(result_clean)}행)")
 
