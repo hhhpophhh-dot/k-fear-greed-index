@@ -1,9 +1,7 @@
 """
 K100-탐욕공포지수 (K-Fear & Greed Index — KOSPI100)
 =====================================================
-KOSPI100 기반 K-탐욕공포지수 산출 스크립트.
-k_fear_greed_index.py의 공통 함수를 import해서 사용하며,
-KOSPI100 지수 시계열 수집 방법만 별도 관리.
+KOSPI100 지수 기반 K-탐욕공포지수 산출.
 
 [현재 상황]
 KOSPI100 지수 시계열 API 확보 중 (2026-06-03 기준 미해결):
@@ -11,46 +9,35 @@ KOSPI100 지수 시계열 API 확보 중 (2026-06-03 기준 미해결):
 - 네이버 PC API: 404
 - Stooq/FDR: KOSPI100 심볼 미지원
 → API 확보 시 get_kospi100_index_close() 함수만 수정
+주가_강도·주가_폭은 KOSPI 전체 공용 데이터 사용 (KOSPI100 전용 미구현)
 """
 
-import os
-import requests
+import sys
+import warnings
 import pandas as pd
-import numpy as np
+import requests
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
-import warnings
 warnings.filterwarnings("ignore")
 
-# 공통 함수/상수 import
-from k_fear_greed_index import (
-    TODAY, TODAY_FDR, DATA_START, DATA_START_FDR,
-    ECOS_API_KEY, LOOKBACK_DAYS,
-    normalize_series, get_ecos_data,
-    get_kospi_stock_data,
-    calc_price_momentum, calc_price_strength, calc_market_breadth,
-    calc_credit_spread, calc_market_volatility, calc_safe_haven_demand,
-    _save_result, _now,
+from factors.config import make_config, ALL_FACTOR_COLS, COL_INDEX, COL_GRADE, COL_UPDATE_TIME
+from factors import (
+    momentum  as f_momentum,
+    strength  as f_strength,
+    breadth   as f_breadth,
+    credit    as f_credit,
+    volatility as f_volatility,
+    safehaven as f_safehaven,
 )
 
+OUTPUT_PATH_K100 = "k_fear_greed_result_k100.csv"
 
-# ============================================================
-# 📊 KOSPI100 지수 시계열 수집 (현재 개선 작업 중)
-# ============================================================
-def get_kospi100_index_close() -> pd.Series:
+
+def get_kospi100_index_close(cfg) -> pd.Series:
     """
     KOSPI100 지수 종가 시계열 반환.
-
-    [현재 상태] API 확보 중 — 해결 시 이 함수만 수정하면 됨.
-    시도 순서:
-    1. 네이버 금융 모바일 API (m.stock.naver.com) — GitHub Actions IP 409 이슈
-    2. 네이버 금융 PC API (api.stock.naver.com) — 404 이슈
-    3. Stooq / FDR — 심볼 미지원
+    실패 시 KS11(KOSPI 전체) fallback 사용.
     """
-    k100_start = (datetime.today() - timedelta(days=365 * 2)).strftime("%Y-%m-%d")
-    start_dt = datetime.strptime(k100_start, "%Y-%m-%d")
-    end_dt   = datetime.strptime(TODAY_FDR, "%Y-%m-%d")
-
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -59,6 +46,9 @@ def get_kospi100_index_close() -> pd.Series:
         "Referer": "https://finance.naver.com",
         "Accept": "application/json, text/plain, */*",
     }
+
+    start_dt = datetime.strptime(cfg.data_start_fdr, "%Y-%m-%d")
+    end_dt   = datetime.strptime(cfg.today_fdr, "%Y-%m-%d")
 
     # 1안: 네이버 모바일 API (90일 청크)
     try:
@@ -108,27 +98,23 @@ def get_kospi100_index_close() -> pd.Series:
     # 3안: Stooq (FDR)
     for sym in ["^ksp100", "KSP100.PL", "KS100.WA"]:
         try:
-            df = fdr.DataReader(sym, k100_start, TODAY_FDR)
+            df = fdr.DataReader(sym, cfg.data_start_fdr, cfg.today_fdr)
             if len(df) > 100 and "Close" in df.columns:
                 print(f"  [K100] Stooq 수집 성공 (심볼: {sym}): {len(df)}일")
                 return df["Close"].astype(float)
         except Exception:
             continue
 
-    # 4안: KOSPI 전체(KS11) fallback — 지수 시계열 없을 때 대체 사용
-    try:
-        df = fdr.DataReader("KS11", k100_start, TODAY_FDR)
-        if len(df) > 100 and "Close" in df.columns:
-            print(f"  [K100] ⚠️  KOSPI100 지수 API 없음 → KS11(KOSPI 전체) fallback 사용 ({len(df)}일)")
-            return df["Close"].astype(float)
-    except Exception as e:
-        print(f"  [K100] KS11 fallback 실패: {e}")
+    # 4안: KS11 fallback
+    df = fdr.DataReader("KS11", cfg.data_start_fdr, cfg.today_fdr)
+    if len(df) > 100 and "Close" in df.columns:
+        print(f"  [K100] KOSPI100 API 없음 → KS11 fallback 사용 ({len(df)}일)")
+        return df["Close"].astype(float)
 
     raise ValueError("KOSPI100 지수 시계열 수집 실패 — 모든 API 시도 소진")
 
 
 def _parse_naver_items(items: list, source: str) -> pd.Series:
-    """네이버 API 응답 파싱 공통 함수."""
     records = []
     for item in items:
         date_str  = (item.get("localTradedAt") or item.get("tradedAt")
@@ -149,101 +135,72 @@ def _parse_naver_items(items: list, source: str) -> pd.Series:
 
     df = pd.DataFrame(records).set_index("date").sort_index()
     df = df[~df.index.duplicated(keep="last")]
-    print(f"  [K100] 종가 수집 완료 ({source}): {len(df)}일치 | 응답 키: {list(items[0].keys())}")
+    print(f"  [K100] 종가 수집 완료 ({source}): {len(df)}일치")
     return df["close"]
 
 
-# ============================================================
-# 📦 KOSPI100 종목 필터
-# ============================================================
-def get_kospi100_tickers() -> list:
-    """FDR 시가총액 상위 100개 종목 코드 반환."""
-    kospi_list = fdr.StockListing("KOSPI")
-    marcap_col = next(
-        (c for c in kospi_list.columns if c.lower() in ("marcap", "mktcap", "marketcap", "cap")),
-        None,
-    )
-    if marcap_col is None:
-        raise ValueError(f"시가총액 컬럼 없음: {list(kospi_list.columns)}")
-    return (
-        kospi_list.dropna(subset=[marcap_col])
-        .nlargest(100, marcap_col)["Code"]
-        .tolist()
-    )
+def _label(score) -> str:
+    if pd.isna(score): return "데이터 없음"
+    if score <= 25:    return "극단적 공포"
+    if score <= 45:    return "공포"
+    if score <= 55:    return "중립"
+    if score <= 75:    return "탐욕"
+    return "극단적 탐욕"
 
 
-# ============================================================
-# 🏆 K100 지수 산출
-# ============================================================
-def calc_k100_fear_greed_index() -> pd.DataFrame:
-    """
-    KOSPI100 기반 K-탐욕공포지수 산출.
-    공통 calc 함수를 KOSPI100 종목/지수 데이터로 호출.
-    """
+def calc_k100_fear_greed_index(cfg) -> pd.DataFrame:
     print("\n=== K100-탐욕공포지수 산출 시작 [KOSPI100] ===\n")
 
-    index_close = get_kospi100_index_close()
+    close = get_kospi100_index_close(cfg)
+    trading_days = close.index
 
-    all_data    = get_kospi_stock_data()
-    tickers_100 = get_kospi100_tickers()
-    avail       = [t for t in tickers_100 if t in all_data["close"].columns]
-    print(f"  KOSPI100 종목 필터: {len(avail)}개 사용 (요청 100개 중)")
-    stock_data = {
-        "close":  all_data["close"][avail],
-        "volume": all_data["volume"][avail],
-        "change": all_data["change"][avail],
-    }
+    strength_s = f_strength.calc(cfg, trading_days=trading_days)
+    breadth_s  = f_breadth.calc(cfg, trading_days=trading_days)
 
-    strength_series, raw_highs, raw_lows = calc_price_strength(_stock_data=stock_data)
-    factors = {
-        "주가_모멘텀":   calc_price_momentum(_close=index_close),
-        "주가_강도":     strength_series,
-        "주가_폭":       calc_market_breadth(_stock_data=stock_data),
-        "신용스프레드":  calc_credit_spread(),
-        "시장_변동성":   calc_market_volatility(_close=index_close),
-        "안전자산_수요": calc_safe_haven_demand(_close=index_close),
-    }
+    factors = {"주가_모멘텀": f_momentum.calc(cfg, close=close)}
+    if not strength_s.empty:
+        factors["주가_강도"] = strength_s
+    if not breadth_s.empty:
+        factors["주가_폭"] = breadth_s
+    factors["신용스프레드"]  = f_credit.calc(cfg)
+    factors["시장_변동성"]   = f_volatility.calc(cfg, close=close)
+    factors["안전자산_수요"] = f_safehaven.calc(cfg, close=close)
 
     print(f"  실제 사용 인자: {len(factors)}개 ({', '.join(factors.keys())})")
 
     result = pd.DataFrame(factors)
-    result["신고가_종목수"]  = raw_highs.reindex(result.index)
-    result["신저가_종목수"]  = raw_lows.reindex(result.index)
-    result["K_탐욕공포지수"] = result[list(factors.keys())].mean(axis=1, skipna=True)
-
-    def grade(score):
-        if pd.isna(score):  return "데이터 없음"
-        if score <= 25:     return "극단적 공포"
-        elif score <= 45:   return "공포"
-        elif score <= 55:   return "중립"
-        elif score <= 75:   return "탐욕"
-        else:               return "극단적 탐욕"
-
-    result["등급"] = result["K_탐욕공포지수"].apply(grade)
-    result["업데이트_시각"] = ""
-    result.loc[result.index[-1], "업데이트_시각"] = _now.strftime("%H:%M")
+    result = result[result.index.isin(trading_days)]
+    result[COL_INDEX] = result[list(factors.keys())].mean(axis=1, skipna=True)
+    result[COL_GRADE] = result[COL_INDEX].apply(_label)
+    result[COL_UPDATE_TIME] = ""
+    result.loc[result.index[-1], COL_UPDATE_TIME] = cfg.base_dt.strftime("%H:%M")
 
     latest   = result.iloc[-1]
     date_str = result.index[-1].strftime("%Y-%m-%d")
     print("\n" + "=" * 52)
     print(f"  K100-탐욕공포지수  |  {date_str}  기준")
     print("=" * 52)
-    print(f"  최종 지수  :  {latest['K_탐욕공포지수']:.1f}  ({latest['등급']})")
+    print(f"  최종 지수  :  {latest[COL_INDEX]:.1f}  ({latest[COL_GRADE]})")
     print("=" * 52)
 
     return result
 
 
-# ============================================================
-# ▶️ 실행 진입점
-# ============================================================
 if __name__ == "__main__":
-    result_k100 = calc_k100_fear_greed_index()
+    cfg = make_config()
 
-    factor_cols = ["주가_모멘텀", "주가_강도", "주가_폭",
-                   "신용스프레드", "시장_변동성", "안전자산_수요",
-                   "K_탐욕공포지수", "등급"]
+    if cfg.base_dt.weekday() >= 5:
+        print(f"[종료] {cfg.today_fdr}은 주말 — 실행 건너뜀")
+        sys.exit(0)
+
+    result_df = calc_k100_fear_greed_index(cfg)
+
+    display_cols = [c for c in ALL_FACTOR_COLS + [COL_INDEX, COL_GRADE] if c in result_df.columns]
     print("\n[최근 10일 인자별 점수 — KOSPI100]")
-    print(result_k100[factor_cols].tail(10).to_string())
+    print(result_df[display_cols].tail(10).to_string())
 
-    _save_result(result_k100, "k_fear_greed_result_k100.csv")
+    result_df.index.name = "날짜"
+    existing = [c for c in display_cols if c in result_df.columns]
+    clean = result_df.dropna(subset=existing)
+    clean.to_csv(OUTPUT_PATH_K100, encoding="utf-8-sig")
+    print(f"결과 저장: {OUTPUT_PATH_K100} ({len(clean)}행)")

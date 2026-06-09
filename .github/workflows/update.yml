@@ -46,5 +46,5 @@ jobs:
             [ -f "$f" ] && git add "$f" || echo "건너뜀 (파일 없음): $f"
           done
           git diff --staged --quiet || git commit -m "데이터 업데이트: $(TZ='Asia/Seoul' date +'%Y-%m-%d')"
-          git pull --rebase origin main
+          git pull --rebase origin $(git rev-parse --abbrev-ref HEAD)
           git push
