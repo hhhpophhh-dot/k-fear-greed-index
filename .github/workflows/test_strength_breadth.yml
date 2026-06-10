@@ -1,0 +1,31 @@
+name: 인자 테스트 — 주가_강도·주가_폭
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: 주가_강도 테스트
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+        run: python -m factors.strength
+
+      - name: 주가_폭 테스트
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+        run: python -m factors.breadth
