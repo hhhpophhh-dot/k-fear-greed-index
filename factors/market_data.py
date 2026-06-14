@@ -16,7 +16,7 @@ def _fetch_one(cfg: Config, date_str: str) -> dict | None:
     try:
         from pykrx_openapi import KRXOpenAPI
         api  = KRXOpenAPI(api_key=cfg.krx_auth_key)
-        rows = api.get_stock_market_daily_trade(bas_dd=date_str).get("OutBlock_1", [])
+        rows = api.get_stock_daily_trade(bas_dd=date_str).get("OutBlock_1", [])
     except Exception as e:
         print(f"  [오류] {date_str} 수집 실패: {e}")
         return None
