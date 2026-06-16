@@ -7,7 +7,7 @@ CNN 탐욕공포지수를 KOSPI에 적용한 K-탐욕공포지수 개발 및 시
 | 인자 | 설명 | 방향 |
 |------|------|------|
 | 주가_모멘텀 | KOSPI vs MA125 | ↑탐욕 |
-| 주가_강도 | 52주 신고가 비율 | ↑탐욕 |
+| 주가_강도 | 상승/하락 거래량 비율 | ↑탐욕 |
 | 주가_폭 | McClellan Summation | ↑탐욕 |
 | 풋콜_비율 | KOSPI200 P/C 비율 | ↓탐욕(invert) |
 | 신용스프레드 | BBB- 스프레드 | ↓탐욕(invert) |
@@ -15,10 +15,49 @@ CNN 탐욕공포지수를 KOSPI에 적용한 K-탐욕공포지수 개발 및 시
 | 안전자산_수요 | 주식-채권 상대수익 | ↑탐욕 |
 
 ## 주요 파일
-- `k_fear_greed_index.py` — 메인 산출 코드
-- `k_fear_greed_result.csv` — 결과 저장 (매 실행 시 전체 재생성)
+- `k_fear_greed_index.py` — 메인 오케스트레이터 (얇음, 인자 호출만)
+- `k_fear_greed_k100.py` — KOSPI100 버전
+- `factors/` — 인자별 독립 서브모듈 패키지
+  - `config.py` — Config dataclass, 컬럼명 상수, 환경변수 중앙화
+  - `utils.py` — normalize_series, get_ecos_data, get_kospi_close
+  - `market_data.py` — KRX OpenAPI 일별매매정보 캐시 (주가_강도·주가_폭 공용)
+  - `momentum/strength/breadth/pcr/credit/volatility/safehaven.py` — 각 인자 독립 모듈
+- `stock_market_data.csv` — 시장데이터 캐시 (adv_vol, dec_vol, git 커밋 보존)
 - `pcr_raw_data.csv` — PCR 캐시 (incremental 수집, git 커밋 보존)
-- `.github/workflows/update.yml` — GitHub Actions 메인 워크플로우 (K + K100 통합)
+- `k_fear_greed_result.csv` — K 결과
+- `k_fear_greed_result_k100.csv` — K100 결과
+- `.github/workflows/update.yml` — 메인 워크플로우 (K + K100 통합)
+- `.github/workflows/test_strength_breadth.yml` — 주가_강도·주가_폭 단독 테스트
+
+## 인자 단독 실행
+각 인자를 독립적으로 테스트 가능:
+```bash
+python -m factors.strength
+python -m factors.breadth
+python -m factors.pcr
+python -m factors.momentum
+python -m factors.credit
+python -m factors.volatility
+python -m factors.safehaven
+```
+
+## 주가_강도·주가_폭 (KRX OpenAPI 전환 완료)
+
+### 배경
+- pykrx(`data.krx.co.kr`) GitHub Actions IP 차단 → KRX 공식 OpenAPI(`data-dbg.krx.co.kr`)로 전환
+- 엔드포인트: `stk_bydd_trd` (유가증권 일별매매정보)
+- 메서드: `api.get_stock_daily_trade(bas_dd=date_str)` (pykrx_openapi 0.1.1)
+- 응답 필드: `MKT_NM`, `ACC_TRDVOL`, `FLUC_RT` (UPPERCASE_UNDERSCORE 형식)
+- KOSPI 필터: `MKT_NM`에 "KOSPI" 또는 "유가증권" 포함 여부
+
+### 캐시 상태 (2026-06-16 기준)
+- `stock_market_data.csv`: 727일 (2023-06-19 ~ 2026-06-15) — git에 커밋됨
+- 이후 매일 1건씩 추가 수집 (수초 내 완료)
+
+### 중간 저장 로직 (market_data.py)
+- 50건마다 중간 git commit + push (수집 중단 시 진행분 보존)
+- `_git_push()` 헬퍼: git config user.name/email 설정 후 commit → push
+- push 성공/실패 여부 명시적 출력
 
 ## PCR (풋/콜 비율) 수집
 
@@ -39,39 +78,32 @@ CNN 탐욕공포지수를 KOSPI에 적용한 K-탐욕공포지수 개발 및 시
 
 ### 수집 로직
 - 배치 크기: 50건, 요청 간 딜레이 0.5초, 배치 간 15초 대기, max_workers=2
-- **캐시 gap 검사**: `cached_set` 기반으로 전체 목표 날짜 중 누락된 날짜 전부 수집 (last_cached 이후만이 아님)
+- **캐시 gap 검사**: `cached_set` 기반으로 전체 목표 날짜 중 누락된 날짜 전부 수집
 - **abort**: `consecutive_empty >= PCR_ABORT_THRESHOLD` 시 `executor.shutdown(wait=False, cancel_futures=True)`로 완전 중단
 - **trading day 기준**: `get_kospi_close().index` (bdate_range 아님) → 실제 거래일만 수집 대상
-
-### 캐시 상태 (2026-06-09 기준)
-- 캐시: 391일 (2024-10-24 ~ 2026-06-04)
-- 미수집: 2026-06-05, 06-08 → 다음 실행 시 cached_set 로직으로 자동 수집
-- 정상 동작: 첫 252거래일 이전은 풋콜_비율 NaN (rolling normalize window)
+- **중간 저장**: 배치 완료마다 `_git_push()` 헬퍼로 git commit + push
 
 ## GitHub Actions 스케줄
 
 ### update.yml (메인 — K + K100 통합)
 ```yaml
 cron: '0 0 * * 2-6'   # KST 화~토 09:00 (UTC 00:00)
+permissions:
+  contents: write
 ```
 - **전날 데이터를 다음날 09:00 KST에 수집** (KRX API 익일 08:00 업데이트 기준)
 - CUTOFF_HOUR=17이므로 09:00 실행 시 자동으로 전날 기준 사용
-- 예: 화요일 09:00 실행 → 월요일 데이터 수집
+- 마지막 단계 "CSV 커밋 & 푸시"에서 git config + 일괄 커밋
 
-### update_k.yml, update_k100.yml
-- workflow_dispatch 전용 (수동 실행만, 스케줄 없음)
+### test_strength_breadth.yml
+- workflow_dispatch 전용 (수동 실행만)
+- `permissions: contents: write` 추가됨 (2026-06-16 수정)
+- timeout: 60분
 
 ## 주요 데이터 처리 규칙
 - **거래일 필터**: `result = result[result.index.isin(_index_close.index)]` → 공휴일·주말 데이터 자동 제거
 - **주말 조기 종료**: `if _base.weekday() >= 5: sys.exit(0)` (공휴일은 result 필터에서 자동 처리)
-- **KOSPI 종목 목록**: pykrx `get_market_ticker_list` — IP 차단으로 현재 동작 불가 (아래 개선 계획 참고)
-
-## 주가_강도·주가_폭 개선 계획 (진행 중)
-- **현재 문제**: pykrx(`data.krx.co.kr`) IP 차단 → 주가_강도·주가_폭 수집 불가, 현재 NaN 처리 중
-- **원인**: GitHub Actions Azure IP 대역이 KRX에 의해 차단됨 (비공식 크롤링 차단 정책)
-- **대안 방향**: KRX OpenAPI(`openapi.krx.co.kr`) 공식 API로 전환 — KRX_AUTH_KEY 이미 보유
-- **필요한 엔드포인트**: 신고가/신저가 종목 수 또는 상승/하락 거래량 일별 집계 데이터
-- **구현 대기 조건**: openapi.krx.co.kr 명세서 확인 후 진행
+- **Config.CUTOFF_HOUR=17**: 17시 이후 당일, 미만 전일 기준으로 수집
 
 ## index.html 전일값 표시
 - 인자값이 NaN인 경우 직전 거래일 값으로 forward-fill (JS `applyForwardFill()`)
@@ -87,3 +119,16 @@ cron: '0 0 * * 2-6'   # KST 화~토 09:00 (UTC 00:00)
 6. **FDR 종목 목록 404** (수정 완료): `fdr.StockListing("KOSPI")` → pykrx 7일 재시도로 대체
 7. **스케줄 당일 수집 불가** (수정 완료): 같은 날 19:00 KST → 다음날 09:00 KST로 변경
 8. **워크플로우 actions 버전** (수정 완료): checkout@v4→v5, setup-python@v5→v6
+9. **pykrx 메서드명 오류** (수정 완료): `get_stock_market_daily_trade` → `get_stock_daily_trade`
+10. **stk_bydd_trd 401 권한** (수정 완료): KRX OpenAPI 포털에서 유가증권 일별매매정보 추가 신청 후 승인
+11. **git push 중간 저장 실패** (수정 완료): git config user.name/email 없이 commit 시도 → 항상 실패. `_git_push()` 헬퍼로 공통화, push 결과 명시 출력
+12. **test 워크플로우 git 권한 없음** (수정 완료): `test_strength_breadth.yml`에 `permissions: contents: write` 추가
+
+## ⚠️ Claude에게: 반드시 지켜야 할 규칙 (욕 먹은 이유)
+- **중간 결과를 일일이 저장하지 않아서 욕먹음**: 수집 완료 후 git push 성공했다고 말했으나 실제로는 git config 없어 commit 자체가 실패했고, 다음 실행 시 전체 재수집 발생
+- **"저장 완료"라고 말했지만 실제로는 안 됐음**: 로그의 출력 메시지만 보고 git push 성공을 추정해서 보고 — 실제 커밋 이력 확인 없이 성공 선언한 것
+- **대화 맥락을 기억하지 못하고 중복 질문**: 방금 전에 한 일도 기억 못하고 이미 결정된 사항을 다시 물어보는 경우 발생
+- **앞으로 지켜야 할 것**:
+  1. git push 이후 반드시 실제 커밋 이력(`list_commits` 등)으로 확인
+  2. "저장됐다"고 말하려면 git에서 파일이 실제로 존재하는지 확인 후 말할 것
+  3. CSV 등 데이터 파일은 수집 후 즉시 중간 저장 + git push 코드가 동작하는지 워크플로우로 직접 검증할 것
