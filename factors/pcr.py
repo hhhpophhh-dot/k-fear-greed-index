@@ -111,21 +111,32 @@ def calc(cfg: Config, trading_days: pd.DatetimeIndex = None) -> pd.Series | None
     return normalize_series(pd.Series(available).sort_index(), invert=True)
 
 
+def _git_push(filepath: str, message: str):
+    subprocess.run(["git", "config", "user.name",  "github-actions[bot]"], check=False)
+    subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+    subprocess.run(["git", "add", filepath], check=False)
+    res = subprocess.run(["git", "commit", "-m", message], capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"  [git] commit 실패 (이미 최신이거나 권한 없음): {res.stderr.strip()}")
+        return
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True,
+    ).stdout.strip() or "main"
+    subprocess.run(["git", "pull", "--rebase", "origin", branch], check=False)
+    r = subprocess.run(["git", "push", "origin", branch], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"  [git] push 완료 → {branch}")
+    else:
+        print(f"  [git] push 실패: {r.stderr.strip()}")
+
+
 def _save_cache(cache: dict, pcr_start: str):
     series = pd.Series(cache).sort_index()
     series = series[series.index >= pd.Timestamp(pcr_start)]
     series.to_csv(PCR_CACHE_PATH, header=["pcr_raw"], encoding="utf-8-sig")
     print(f"  캐시 저장: {len(series)}일 → {PCR_CACHE_PATH}")
-    subprocess.run(["git", "add", PCR_CACHE_PATH], check=False)
-    res = subprocess.run(["git", "commit", "-m", f"PCR 캐시 저장: {len(series)}일"],
-                         capture_output=True, text=True)
-    if res.returncode == 0:
-        branch = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True,
-        ).stdout.strip() or "main"
-        subprocess.run(["git", "pull", "--rebase", "origin", branch], check=False)
-        subprocess.run(["git", "push", "origin", branch], check=False)
+    _git_push(PCR_CACHE_PATH, f"PCR 캐시 저장: {len(series)}일")
 
 
 if __name__ == "__main__":

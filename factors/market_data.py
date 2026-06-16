@@ -12,6 +12,26 @@ _cache: pd.DataFrame | None = None
 ABORT_THRESHOLD = 10
 
 
+def _git_push(filepath: str, message: str):
+    subprocess.run(["git", "config", "user.name",  "github-actions[bot]"], check=False)
+    subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+    subprocess.run(["git", "add", filepath], check=False)
+    res = subprocess.run(["git", "commit", "-m", message], capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"  [git] commit 실패 (이미 최신이거나 권한 없음): {res.stderr.strip()}")
+        return
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True,
+    ).stdout.strip() or "main"
+    subprocess.run(["git", "pull", "--rebase", "origin", branch], check=False)
+    r = subprocess.run(["git", "push", "origin", branch], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"  [git] push 완료 → {branch}")
+    else:
+        print(f"  [git] push 실패: {r.stderr.strip()}")
+
+
 def _fetch_one(cfg: Config, date_str: str) -> dict | None:
     try:
         from pykrx_openapi import KRXOpenAPI
@@ -87,6 +107,13 @@ def get(cfg: Config, trading_days: pd.DatetimeIndex = None) -> pd.DataFrame | No
                 new_rows[d] = result
             if (i + 1) % 50 == 0:
                 print(f"  [{i+1}/{len(missing)}] 수집 중...")
+                if new_rows:
+                    # 50건마다 중간 저장 (수집 중 중단돼도 진행분 보존)
+                    new_df = pd.DataFrame.from_dict(new_rows, orient="index")
+                    tmp_df = pd.concat([cache_df, new_df]).sort_index()
+                    tmp_df = tmp_df[~tmp_df.index.duplicated(keep="last")]
+                    tmp_df.to_csv(STOCK_MARKET_CACHE_PATH, encoding="utf-8-sig")
+                    _git_push(STOCK_MARKET_CACHE_PATH, f"시장데이터 중간 저장: {len(tmp_df)}일")
             time.sleep(0.3)
 
         if new_rows:
@@ -95,18 +122,7 @@ def get(cfg: Config, trading_days: pd.DatetimeIndex = None) -> pd.DataFrame | No
             cache_df = cache_df[~cache_df.index.duplicated(keep="last")]
             cache_df.to_csv(STOCK_MARKET_CACHE_PATH, encoding="utf-8-sig")
             print(f"  시장데이터 캐시 저장: {len(cache_df)}일 → {STOCK_MARKET_CACHE_PATH}")
-            subprocess.run(["git", "add", STOCK_MARKET_CACHE_PATH], check=False)
-            res = subprocess.run(
-                ["git", "commit", "-m", f"시장데이터 캐시 저장: {len(cache_df)}일"],
-                capture_output=True, text=True,
-            )
-            if res.returncode == 0:
-                branch = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    capture_output=True, text=True,
-                ).stdout.strip() or "main"
-                subprocess.run(["git", "pull", "--rebase", "origin", branch], check=False)
-                subprocess.run(["git", "push", "origin", branch], check=False)
+            _git_push(STOCK_MARKET_CACHE_PATH, f"시장데이터 캐시 저장: {len(cache_df)}일")
 
     if cache_df.empty:
         print("  [경고] 시장데이터 수집 실패 — 주가_강도·주가_폭 NaN 처리")
