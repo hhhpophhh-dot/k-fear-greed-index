@@ -104,8 +104,8 @@
     .badge-k   { background: rgba(88,166,255,0.15); color: var(--k-color); border: 1px solid rgba(88,166,255,0.3); }
     .badge-k100{ background: rgba(247,129,102,0.15); color: var(--k100-color); border: 1px solid rgba(247,129,102,0.3); }
 
-    .gauge-wrap { position: relative; width: 220px; margin: 0 auto 10px; }
-    .gauge-wrap canvas { display: block; }
+    .gauge-wrap { position: relative; width: 100%; max-width: 220px; margin: 0 auto 10px; aspect-ratio: 220 / 130; }
+    .gauge-wrap canvas { display: block; width: 100%; height: 100%; }
     .gauge-label {
       position: absolute;
       bottom: 14px;
@@ -286,8 +286,7 @@
     @media (max-width: 700px) {
       .main { padding: 12px; gap: 12px; }
       /* 게이지·인자 바: 2컬럼 유지 (가로 비교) */
-      .gauge-wrap { width: 150px; }
-      .gauge-wrap canvas { width: 150px; height: 88px; }
+      .gauge-wrap { max-width: 160px; }
       .gauge-label .score { font-size: 1.9rem; }
       /* 테이블만 단일 컬럼 (너무 좁아 가독성 저하) */
       .table-row { grid-template-columns: 1fr; }
@@ -320,7 +319,7 @@
     <div class="card gauge-card">
       <div class="gauge-universe-badge badge-k">KOSPI 전체</div>
       <div class="gauge-wrap">
-        <canvas id="gaugeK" width="220" height="130"></canvas>
+        <canvas id="gaugeK" width="1" height="1"></canvas>
         <div class="gauge-label">
           <div class="score" id="scoreK">—</div>
           <div class="grade" id="gradeK">—</div>
@@ -341,7 +340,7 @@
       <!-- 데이터 있을 때 표시 -->
       <div id="gaugeK100DataWrap" style="display:none">
         <div class="gauge-wrap">
-          <canvas id="gaugeK100" width="220" height="130"></canvas>
+          <canvas id="gaugeK100" width="1" height="1"></canvas>
           <div class="gauge-label">
             <div class="score" id="scoreK100">—</div>
             <div class="grade" id="gradeK100">—</div>
@@ -536,12 +535,21 @@ function parseCSV(text) {
 function drawGauge(canvasId, score) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
+  const wrap = canvas.closest(".gauge-wrap");
+  if (!wrap) return;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
   const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H - 14;
-  const R = 88, thick = 18;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
 
-  ctx.clearRect(0, 0, W, H);
+  const scale = W / 220;
+  const cx = W / 2, cy = H - 14 * scale;
+  const R = 88 * scale, thick = 18 * scale;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const segments = [
     { from: Math.PI, to: Math.PI * 1.2, color: "#d32f2f" },
@@ -566,37 +574,35 @@ function drawGauge(canvasId, score) {
   ctx.beginPath();
   ctx.arc(cx, cy, R, Math.max(Math.PI, angle - span), Math.min(Math.PI * 2, angle + span));
   ctx.strokeStyle = scoreColor(score);
-  ctx.lineWidth = thick + 4;
+  ctx.lineWidth = thick + 4 * scale;
   ctx.lineCap = "round";
   ctx.stroke();
 
-  // 바늘
   const nx = cx + R * Math.cos(angle);
   const ny = cy + R * Math.sin(angle);
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(nx, ny);
   ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2 * scale;
   ctx.lineCap = "round";
   ctx.globalAlpha = 0.9;
   ctx.stroke();
   ctx.globalAlpha = 1;
 
   ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.arc(cx, cy, 4 * scale, 0, Math.PI * 2);
   ctx.fillStyle = "#fff";
   ctx.fill();
 
-  // 눈금
   const ticks = [{ val: 0 }, { val: 25 }, { val: 50 }, { val: 75 }, { val: 100 }];
-  ctx.font = "9px sans-serif";
+  ctx.font = `${Math.round(9 * scale)}px sans-serif`;
   ctx.fillStyle = "#8b949e";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ticks.forEach(t => {
     const a = Math.PI + (t.val / 100) * Math.PI;
-    ctx.fillText(t.val, cx + (R + 15) * Math.cos(a), cy + (R + 15) * Math.sin(a));
+    ctx.fillText(t.val, cx + (R + 15 * scale) * Math.cos(a), cy + (R + 15 * scale) * Math.sin(a));
   });
 }
 
@@ -933,15 +939,6 @@ init();
 // ── PC / 모바일 뷰 토글 ──
 const MOBILE_W = 390;
 
-function setGaugeSize(canvasId, w, h) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-  canvas.width  = w;
-  canvas.height = h;
-  const wrap = canvas.closest(".gauge-wrap");
-  if (wrap) wrap.style.width = w + "px";
-}
-
 function redrawAllGauges() {
   const scoreK = parseFloat(document.getElementById("scoreK")?.textContent);
   if (!isNaN(scoreK)) drawGauge("gaugeK", scoreK);
@@ -963,11 +960,7 @@ function setView(mode) {
     main.style.marginRight= "0";
     main.style.padding    = "12px";
     main.style.gap        = "12px";
-    // 게이지/인자 바는 2컬럼 유지, 테이블만 단일 컬럼
     if (tableRow) tableRow.style.gridTemplateColumns = "1fr";
-    // 게이지 캔버스 축소
-    setGaugeSize("gaugeK",    160, 94);
-    setGaugeSize("gaugeK100", 160, 94);
   } else {
     main.style.maxWidth    = "";
     main.style.marginLeft  = "";
@@ -975,13 +968,13 @@ function setView(mode) {
     main.style.padding     = "";
     main.style.gap         = "";
     if (tableRow) tableRow.style.gridTemplateColumns = "";
-    setGaugeSize("gaugeK",    220, 130);
-    setGaugeSize("gaugeK100", 220, 130);
   }
 
   if (histChart) histChart.resize();
   redrawAllGauges();
 }
+
+window.addEventListener("resize", () => { redrawAllGauges(); });
 </script>
 </body>
 </html>
