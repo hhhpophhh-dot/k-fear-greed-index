@@ -3,21 +3,16 @@ K100-탐욕공포지수 (K-Fear & Greed Index — KOSPI100)
 =====================================================
 KOSPI100 지수 기반 K-탐욕공포지수 산출.
 
-[현재 상황]
-KOSPI100 지수 시계열 API 확보 중 (2026-06-03 기준 미해결):
-- 네이버 모바일 API: GitHub Actions IP에서 409
-- 네이버 PC API: 404
-- Stooq/FDR: KOSPI100 심볼 미지원
-→ API 확보 시 get_kospi100_index_close() 함수만 수정
-주가_강도·주가_폭은 KOSPI 전체 공용 데이터 사용 (KOSPI100 전용 미구현)
+[KOSPI100 지수 시계열]
+- k100_index_cache.csv에서 읽기만 함 (수집은 collect_k100_cache.py 담당)
+- 캐시 부족 시 KS11 fallback 사용
 """
 
+import os
 import sys
 import warnings
 import pandas as pd
-import requests
 import FinanceDataReader as fdr
-from datetime import datetime, timedelta
 warnings.filterwarnings("ignore")
 
 from factors.config import make_config, ALL_FACTOR_COLS, COL_INDEX, COL_GRADE, COL_UPDATE_TIME
@@ -31,112 +26,36 @@ from factors import (
 )
 
 OUTPUT_PATH_K100 = "k_fear_greed_result_k100.csv"
+K100_CACHE_PATH = "k100_index_cache.csv"
+MIN_CACHE_DAYS = 100
 
 
 def get_kospi100_index_close(cfg) -> pd.Series:
     """
     KOSPI100 지수 종가 시계열 반환.
-    실패 시 KS11(KOSPI 전체) fallback 사용.
+    k100_index_cache.csv에서 읽고, 부족하면 KS11 fallback.
     """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://finance.naver.com",
-        "Accept": "application/json, text/plain, */*",
-    }
-
-    start_dt = datetime.strptime(cfg.data_start_fdr, "%Y-%m-%d")
-    end_dt   = datetime.strptime(cfg.today_fdr, "%Y-%m-%d")
-
-    # 1안: 네이버 모바일 API (90일 청크)
-    try:
-        all_items = []
-        chunk_start = start_dt
-        while chunk_start <= end_dt:
-            chunk_end = min(chunk_start + timedelta(days=89), end_dt)
-            params = {
-                "startTime": chunk_start.strftime("%Y%m%d"),
-                "endTime":   chunk_end.strftime("%Y%m%d"),
-                "timeframe": "day",
-            }
-            resp = requests.get(
-                "https://m.stock.naver.com/api/index/KOSPI100/price",
-                params=params, headers=headers, timeout=30
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            items = data if isinstance(data, list) else data.get("priceInfos", data.get("prices", []))
-            all_items.extend(items)
-            chunk_start = chunk_end + timedelta(days=1)
-
-        if all_items:
-            return _parse_naver_items(all_items, "모바일 API")
-        raise ValueError("응답 비어있음")
-    except Exception as e:
-        print(f"  [K100] 네이버 모바일 API 실패: {e}")
-
-    # 2안: 네이버 PC API
-    try:
-        resp = requests.get(
-            "https://api.stock.naver.com/index/KOSPI100/basicIndicesByTradedAt",
-            params={"startTradedAt": start_dt.strftime("%Y-%m-%d"),
-                    "endTradedAt":   end_dt.strftime("%Y-%m-%d")},
-            headers={**headers, "Referer": "https://finance.naver.com/sise/sise_index.nhn?code=KOSPI100"},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        items = data if isinstance(data, list) else data.get("indices", data.get("prices", []))
-        if items:
-            return _parse_naver_items(items, "PC API")
-        raise ValueError("응답 비어있음")
-    except Exception as e:
-        print(f"  [K100] 네이버 PC API 실패: {e}")
-
-    # 3안: Stooq (FDR)
-    for sym in ["^ksp100", "KSP100.PL", "KS100.WA"]:
+    if os.path.exists(K100_CACHE_PATH):
         try:
-            df = fdr.DataReader(sym, cfg.data_start_fdr, cfg.today_fdr)
-            if len(df) > 100 and "Close" in df.columns:
-                print(f"  [K100] Stooq 수집 성공 (심볼: {sym}): {len(df)}일")
-                return df["Close"].astype(float)
-        except Exception:
-            continue
+            df = pd.read_csv(K100_CACHE_PATH, index_col=0, parse_dates=True,
+                             encoding="utf-8-sig")
+            series = df.iloc[:, 0].dropna().astype(float)
+            series = series[series.index >= cfg.data_start_fdr]
+            if len(series) >= MIN_CACHE_DAYS:
+                print(f"  [K100] 캐시 로드 성공: {len(series)}일")
+                return series
+            print(f"  [K100] 캐시 부족 ({len(series)}일 < {MIN_CACHE_DAYS}일)")
+        except Exception as e:
+            print(f"  [K100] 캐시 읽기 실패: {e}")
+    else:
+        print(f"  [K100] 캐시 파일 없음: {K100_CACHE_PATH}")
 
-    # 4안: KS11 fallback
     df = fdr.DataReader("KS11", cfg.data_start_fdr, cfg.today_fdr)
-    if len(df) > 100 and "Close" in df.columns:
-        print(f"  [K100] KOSPI100 API 없음 → KS11 fallback 사용 ({len(df)}일)")
+    if len(df) > MIN_CACHE_DAYS and "Close" in df.columns:
+        print(f"  [K100] KS11 fallback 사용 ({len(df)}일)")
         return df["Close"].astype(float)
 
-    raise ValueError("KOSPI100 지수 시계열 수집 실패 — 모든 API 시도 소진")
-
-
-def _parse_naver_items(items: list, source: str) -> pd.Series:
-    records = []
-    for item in items:
-        date_str  = (item.get("localTradedAt") or item.get("tradedAt")
-                     or item.get("date") or item.get("dt"))
-        close_val = (item.get("closePrice") or item.get("endPrice")
-                     or item.get("close") or item.get("cls"))
-        if date_str and close_val:
-            try:
-                records.append({
-                    "date":  pd.to_datetime(str(date_str)[:10]),
-                    "close": float(str(close_val).replace(",", "")),
-                })
-            except Exception:
-                pass
-
-    if len(records) < 20:
-        raise ValueError(f"데이터 부족 ({len(records)}개)")
-
-    df = pd.DataFrame(records).set_index("date").sort_index()
-    df = df[~df.index.duplicated(keep="last")]
-    print(f"  [K100] 종가 수집 완료 ({source}): {len(df)}일치")
-    return df["close"]
+    raise ValueError("KOSPI100 지수 시계열 확보 실패 — 캐시 없음, KS11 fallback 실패")
 
 
 def _label(score) -> str:

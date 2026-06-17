@@ -1,0 +1,30 @@
+name: K100 지수 캐시 수집 (데이터 수집 전용)
+
+on:
+  workflow_dispatch:   # 수동 실행 전용
+
+permissions:
+  contents: write
+
+jobs:
+  collect-k100-cache:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v5
+
+      - name: Python 3.11 설치
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 패키지 설치
+        run: pip install pykrx-openapi pandas
+
+      - name: K100 지수 캐시 수집
+        env:
+          KRX_AUTH_KEY: ${{ secrets.KRX_AUTH_KEY }}
+        run: python collect_k100_cache.py
