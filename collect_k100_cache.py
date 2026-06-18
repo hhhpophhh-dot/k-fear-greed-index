@@ -152,7 +152,7 @@ def _get_index_name(row: dict) -> str:
 
 
 def _get_close_price(row: dict) -> float | None:
-    for key in ("clpr", "tddClsprc", "clsPrc", "cls_prc", "CLSPRC",
+    for key in ("CLSPRC_IDX", "clpr", "tddClsprc", "clsPrc", "cls_prc", "CLSPRC",
                 "endPrc", "closePrice", "close"):
         val = row.get(key)
         if val is not None:
