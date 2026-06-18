@@ -112,6 +112,9 @@ def main():
                 close_val = _find_kospi100_close(rows)
                 if close_val is not None:
                     new_data[d] = close_val
+                else:
+                    if len(new_data) == 0 and consecutive_empty == 0:
+                        print(f"  [경고] {date_str}: rows={len(rows)}건이나 코스피100 종가 매칭 실패")
 
             except Exception as e:
                 print(f"  [{date_str}] 오류: {e}")
@@ -179,6 +182,8 @@ def _save_cache(cache: dict, start_cutoff: str):
 
 
 def _git_push(batch_idx: int, total_batches: int, total_days: int):
+    _sp.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+    _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
     _sp.run(["git", "add", K100_CACHE_PATH], check=False)
     result = _sp.run(
         ["git", "commit", "-m",
@@ -187,11 +192,18 @@ def _git_push(batch_idx: int, total_batches: int, total_days: int):
     )
     if result.returncode == 0:
         _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
-        _sp.run(["git", "push", "origin", "main"], check=False)
-        print(f"  git push 완료")
+        push_result = _sp.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+        if push_result.returncode == 0:
+            print(f"  git push 완료")
+        else:
+            print(f"  [경고] git push 실패: {push_result.stderr.strip()}")
+    else:
+        print(f"  [경고] git commit 실패: {result.stderr.strip()}")
 
 
 def _git_push_final(total_days: int):
+    _sp.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+    _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
     _sp.run(["git", "add", K100_CACHE_PATH], check=False)
     result = _sp.run(
         ["git", "commit", "-m", f"K100 지수 캐시 수집 완료 ({total_days}일)"],
@@ -199,8 +211,13 @@ def _git_push_final(total_days: int):
     )
     if result.returncode == 0:
         _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
-        _sp.run(["git", "push", "origin", "main"], check=False)
-        print(f"  최종 git push 완료")
+        push_result = _sp.run(["git", "push", "origin", "main"], capture_output=True, text=True)
+        if push_result.returncode == 0:
+            print(f"  최종 git push 완료")
+        else:
+            print(f"  [경고] 최종 git push 실패: {push_result.stderr.strip()}")
+    else:
+        print(f"  [경고] 최종 git commit 실패: {result.stderr.strip()}")
 
 
 if __name__ == "__main__":
