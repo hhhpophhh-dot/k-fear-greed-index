@@ -10,6 +10,11 @@ KRX OpenAPI get_kospi_daily_trade(bas_dd) → KOSPI100 레코드 필터 → CSV 
 
 [캐시 파일]
 - k100_index_cache.csv: 날짜, k100_close 컬럼
+
+[KRX API 실제 응답 필드] (2026-06-18 확인)
+- IDX_NM: 지수명 (예: "코스피 100")
+- CLSPRC_IDX: 종가
+- BAS_DD, IDX_CLSS, CMPPREVDD_IDX, FLUC_RT, OPNPRC_IDX, HGPRC_IDX, LWPRC_IDX, ACC_TRDVOL, ACC_TRDVAL, MKTCAP
 """
 
 import os
@@ -42,6 +47,10 @@ def main():
         print("[오류] pykrx-openapi 미설치: pip install pykrx-openapi")
         return
 
+    # ── git config 설정 (커밋/푸시에 필요) ──
+    _sp.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
+    _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
+
     collect_start = (datetime.today() - timedelta(days=400 * 7 // 5 + 30)).strftime("%Y-%m-%d")
     all_dates = pd.bdate_range(start=collect_start, end=TODAY_FDR)
 
@@ -66,7 +75,6 @@ def main():
 
     # ── 배치 수집 ──
     first_row_printed = False
-    new_data: dict = {}
     aborted = False
 
     batches = [missing[i:i + BATCH_SIZE] for i in range(0, len(missing), BATCH_SIZE)]
@@ -80,6 +88,7 @@ def main():
         print(f"── 배치 [{batch_idx}/{total_batches}] 시작: {len(batch)}건 ──")
         batch_start = _time.time()
         consecutive_empty = 0
+        batch_new: dict = {}
 
         for d in batch:
             if aborted:
@@ -96,8 +105,8 @@ def main():
                     print(f"  [진단] 응답 필드: {list(rows[0].keys())}")
                     print(f"  [진단] 전체 지수 목록 ({date_str}):")
                     for r in rows:
-                        nm = _get_index_name(r)
-                        cl = _get_close_price(r)
+                        nm = r.get("IDX_NM", "?")
+                        cl = r.get("CLSPRC_IDX", "?")
                         print(f"    - {nm}: {cl}")
                     first_row_printed = True
 
@@ -111,9 +120,9 @@ def main():
                 consecutive_empty = 0
                 close_val = _find_kospi100_close(rows)
                 if close_val is not None:
-                    new_data[d] = close_val
+                    batch_new[d] = close_val
                 else:
-                    if len(new_data) == 0 and consecutive_empty == 0:
+                    if len(batch_new) == 0 and len(cache) == 0:
                         print(f"  [경고] {date_str}: rows={len(rows)}건이나 코스피100 종가 매칭 실패")
 
             except Exception as e:
@@ -124,53 +133,34 @@ def main():
                     aborted = True
 
         elapsed = _time.time() - batch_start
-        print(f"  배치 [{batch_idx}/{total_batches}] 완료 — "
-              f"소요 {elapsed:.0f}초, 이번 배치 {len(new_data)}일 누적\n")
 
-        # ── 배치마다 캐시 저장 + git push ──
-        if new_data:
-            cache.update(new_data)
+        # ── 배치 완료: 즉시 저장 + push ──
+        if batch_new:
+            cache.update(batch_new)
             _save_cache(cache, collect_start)
-            _git_push(batch_idx, total_batches, len(cache))
+            _git_commit_and_push(f"K100 캐시 수집: 배치 {batch_idx}/{total_batches} ({len(cache)}일)")
+
+        print(f"  배치 [{batch_idx}/{total_batches}] 완료 — "
+              f"소요 {elapsed:.0f}초, 이번 배치 신규 {len(batch_new)}일, 전체 캐시 {len(cache)}일\n")
 
         if batch_idx < total_batches and not aborted:
             print(f"  다음 배치까지 {BATCH_DELAY}초 대기...\n")
             _time.sleep(BATCH_DELAY)
 
-    cache.update(new_data)
-    print(f"\n[수집 결과] 이번 실행 신규: {len(new_data)}일 / 전체 캐시: {len(cache)}일")
-
-    if cache:
-        _save_cache(cache, collect_start)
-        _git_push_final(len(cache))
-
-
-def _get_index_name(row: dict) -> str:
-    for key in ("idxNm", "idx_nm", "IDX_NM", "idxCd", "idx_cd",
-                "itmNm", "itm_nm", "ISU_NM", "isuNm"):
-        val = row.get(key)
-        if val:
-            return str(val)
-    return str(list(row.values())[:2])
-
-
-def _get_close_price(row: dict) -> float | None:
-    for key in ("CLSPRC_IDX", "clpr", "tddClsprc", "clsPrc", "cls_prc", "CLSPRC",
-                "endPrc", "closePrice", "close"):
-        val = row.get(key)
-        if val is not None:
-            try:
-                return float(str(val).replace(",", ""))
-            except (ValueError, TypeError):
-                continue
-    return None
+    print(f"\n[수집 결과] 전체 캐시: {len(cache)}일")
 
 
 def _find_kospi100_close(rows: list) -> float | None:
+    """코스피 100 종가를 찾아 반환. 못 찾으면 None."""
     for r in rows:
-        nm = _get_index_name(r).upper()
-        if "100" in nm and ("KOSPI" in nm or "코스피" in nm):
-            return _get_close_price(r)
+        nm = r.get("IDX_NM", "")
+        if "100" in nm and "코스피" in nm:
+            val = r.get("CLSPRC_IDX")
+            if val is not None:
+                try:
+                    return float(str(val).replace(",", ""))
+                except (ValueError, TypeError):
+                    pass
     return None
 
 
@@ -181,43 +171,50 @@ def _save_cache(cache: dict, start_cutoff: str):
     print(f"  캐시 저장: {len(series)}일 → {K100_CACHE_PATH}")
 
 
-def _git_push(batch_idx: int, total_batches: int, total_days: int):
-    _sp.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
-    _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
-    _sp.run(["git", "add", K100_CACHE_PATH], check=False)
-    result = _sp.run(
-        ["git", "commit", "-m",
-         f"K100 지수 캐시 수집: 배치 {batch_idx}/{total_batches} ({total_days}일)"],
+def _git_commit_and_push(msg: str):
+    """git add → commit → pull --rebase → push. 각 단계 실패 시 로그 출력."""
+    # git add
+    add_r = _sp.run(["git", "add", K100_CACHE_PATH], capture_output=True, text=True)
+    if add_r.returncode != 0:
+        print(f"  [git 오류] add 실패: {add_r.stderr.strip()}")
+        return
+
+    # git commit (변경 없으면 스킵)
+    commit_r = _sp.run(
+        ["git", "diff", "--staged", "--quiet"],
         capture_output=True, text=True
     )
-    if result.returncode == 0:
-        _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
-        push_result = _sp.run(["git", "push", "origin", "main"], capture_output=True, text=True)
-        if push_result.returncode == 0:
-            print(f"  git push 완료")
-        else:
-            print(f"  [경고] git push 실패: {push_result.stderr.strip()}")
-    else:
-        print(f"  [경고] git commit 실패: {result.stderr.strip()}")
+    if commit_r.returncode == 0:
+        print(f"  [git] 변경 없음, commit 스킵")
+        return
 
-
-def _git_push_final(total_days: int):
-    _sp.run(["git", "config", "user.name", "github-actions[bot]"], check=False)
-    _sp.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=False)
-    _sp.run(["git", "add", K100_CACHE_PATH], check=False)
-    result = _sp.run(
-        ["git", "commit", "-m", f"K100 지수 캐시 수집 완료 ({total_days}일)"],
+    commit_r = _sp.run(
+        ["git", "commit", "-m", msg],
         capture_output=True, text=True
     )
-    if result.returncode == 0:
-        _sp.run(["git", "pull", "--rebase", "origin", "main"], check=False)
-        push_result = _sp.run(["git", "push", "origin", "main"], capture_output=True, text=True)
-        if push_result.returncode == 0:
-            print(f"  최종 git push 완료")
-        else:
-            print(f"  [경고] 최종 git push 실패: {push_result.stderr.strip()}")
-    else:
-        print(f"  [경고] 최종 git commit 실패: {result.stderr.strip()}")
+    if commit_r.returncode != 0:
+        print(f"  [git 오류] commit 실패: {commit_r.stderr.strip()}")
+        return
+
+    # git pull --rebase
+    pull_r = _sp.run(
+        ["git", "pull", "--rebase", "origin", "main"],
+        capture_output=True, text=True
+    )
+    if pull_r.returncode != 0:
+        print(f"  [git 오류] pull 실패: {pull_r.stderr.strip()}")
+        return
+
+    # git push
+    push_r = _sp.run(
+        ["git", "push", "origin", "main"],
+        capture_output=True, text=True
+    )
+    if push_r.returncode != 0:
+        print(f"  [git 오류] push 실패: {push_r.stderr.strip()}")
+        return
+
+    print(f"  git push 완료")
 
 
 if __name__ == "__main__":
