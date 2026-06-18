@@ -112,6 +112,9 @@ def main():
                 close_val = _find_kospi100_close(rows)
                 if close_val is not None:
                     new_data[d] = close_val
+                else:
+                    if len(new_data) == 0 and consecutive_empty == 0:
+                        print(f"  [경고] {date_str}: rows={len(rows)}건이나 코스피100 종가 매칭 실패")
 
             except Exception as e:
                 print(f"  [{date_str}] 오류: {e}")
