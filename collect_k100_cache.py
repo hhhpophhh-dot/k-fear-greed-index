@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore")
 KRX_AUTH_KEY = os.environ.get("KRX_AUTH_KEY", "")
 K100_CACHE_PATH = "k100_index_cache.csv"
 BATCH_SIZE = 50
-MAX_BATCHES = 1
+MAX_BATCHES = 20
 BATCH_DELAY = 15
 ABORT_THRESHOLD = 10
 
