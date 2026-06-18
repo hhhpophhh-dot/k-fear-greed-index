@@ -28,6 +28,7 @@ warnings.filterwarnings("ignore")
 KRX_AUTH_KEY = os.environ.get("KRX_AUTH_KEY", "")
 K100_CACHE_PATH = "k100_index_cache.csv"
 BATCH_SIZE = 50
+MAX_BATCHES = 1
 BATCH_DELAY = 15
 ABORT_THRESHOLD = 10
 
@@ -79,9 +80,10 @@ def main():
 
     batches = [missing[i:i + BATCH_SIZE] for i in range(0, len(missing), BATCH_SIZE)]
     total_batches = len(batches)
-    print(f"[배치 수집] {total_batches}배치 × 최대 {BATCH_SIZE}건 (배치 간 {BATCH_DELAY}초 대기)\n")
+    run_batches = min(total_batches, MAX_BATCHES)
+    print(f"[배치 수집] 전체 {total_batches}배치 중 {run_batches}배치 실행 (MAX_BATCHES={MAX_BATCHES})\n")
 
-    for batch_idx, batch in enumerate(batches, start=1):
+    for batch_idx, batch in enumerate(batches[:run_batches], start=1):
         if aborted:
             break
 
