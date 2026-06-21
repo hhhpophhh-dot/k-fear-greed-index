@@ -127,6 +127,7 @@ permissions:
 10. **stk_bydd_trd 401 권한** (수정 완료): KRX OpenAPI 포털에서 유가증권 일별매매정보 추가 신청 후 승인
 11. **git push 중간 저장 실패** (수정 완료): git config user.name/email 없이 commit 시도 → 항상 실패. `_git_push()` 헬퍼로 공통화, push 결과 명시 출력
 12. **test 워크플로우 git 권한 없음** (수정 완료): `test_strength_breadth.yml`에 `permissions: contents: write` 추가
+13. **업데이트_시각 CSV에 미저장** (수정 완료): `dropna(subset=existing)`의 기본값 `how="any"`로 인해 인자 중 하나라도 NaN이면 마지막 행 삭제 → `how="all"`로 변경
 
 ## ⚠️ Claude에게: 반드시 지켜야 할 규칙 (욕 먹은 이유)
 - **중간 결과를 일일이 저장하지 않아서 욕먹음**: 수집 완료 후 git push 성공했다고 말했으나 실제로는 git config 없어 commit 자체가 실패했고, 다음 실행 시 전체 재수집 발생
