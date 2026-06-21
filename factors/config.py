@@ -57,6 +57,13 @@ class Config:
         self.data_start_fdr = _ds.strftime("%Y-%m-%d")
 
 
+def is_krx_trading_day(dt: datetime) -> bool:
+    """exchange_calendars XKRX 기준 거래일 여부 반환."""
+    import exchange_calendars as xcals
+    cal = xcals.get_calendar("XKRX")
+    return cal.is_session(dt.strftime("%Y-%m-%d"))
+
+
 def make_config() -> Config:
     """환경변수 + 현재 시각으로 Config 생성."""
     kst = timezone(timedelta(hours=9))

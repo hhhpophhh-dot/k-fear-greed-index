@@ -2,7 +2,7 @@ name: K-탐욕공포지수 전체 업데이트 (K + K100)
 
 on:
   schedule:
-    - cron: '0 0 * * 2-6'   # 화~토 09:00 KST (UTC 00:00) — KRX API 익일 08:00 업데이트 기준
+    - cron: '0 0 * * 1-5'   # 월~금 09:00 KST (UTC 00:00) — 전 영업일 데이터를 다음 영업일에 수집
   workflow_dispatch:         # 수동 실행 버튼
 
 permissions:

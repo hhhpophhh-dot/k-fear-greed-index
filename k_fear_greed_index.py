@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 warnings.filterwarnings("ignore")
 
-from factors.config import make_config, ALL_FACTOR_COLS
+from factors.config import make_config, is_krx_trading_day, ALL_FACTOR_COLS
 from factors.config import (
     COL_MOMENTUM, COL_STRENGTH, COL_BREADTH, COL_PCR,
     COL_CREDIT, COL_VOLATILITY, COL_SAFEHAVEN,
@@ -145,8 +145,8 @@ def calc_k_fear_greed_index(cfg) -> pd.DataFrame:
 if __name__ == "__main__":
     cfg = make_config()
 
-    if cfg.base_dt.weekday() >= 5:
-        print(f"[종료] {cfg.today_fdr}은 주말 — 실행 건너뜀")
+    if not is_krx_trading_day(cfg.base_dt):
+        print(f"[종료] {cfg.today_fdr}은 비거래일 (주말/공휴일) — 실행 건너뜀")
         sys.exit(0)
 
     result_df = calc_k_fear_greed_index(cfg)

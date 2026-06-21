@@ -87,12 +87,16 @@ python -m factors.safehaven
 
 ### update.yml (메인 — K + K100 통합)
 ```yaml
-cron: '0 0 * * 2-6'   # KST 화~토 09:00 (UTC 00:00)
+cron: '0 0 * * 1-5'   # KST 월~금 09:00 (UTC 00:00)
 permissions:
   contents: write
 ```
-- **전날 데이터를 다음날 09:00 KST에 수집** (KRX API 익일 08:00 업데이트 기준)
-- CUTOFF_HOUR=17이므로 09:00 실행 시 자동으로 전날 기준 사용
+- **전 영업일 데이터를 다음 영업일 09:00 KST에 수집**
+- KRX API: 주말/공휴일 데이터 없음, 영업일 기준 익일 08:00 업데이트
+- CUTOFF_HOUR=17이므로 09:00 실행 시 자동으로 전일 기준 사용
+- 거래일 판단: `exchange_calendars` 라이브러리 XKRX 캘린더 (`is_krx_trading_day()`)
+- 비거래일(주말/공휴일) 실행 시 `sys.exit(0)` 자동 종료
+- 금요일 데이터 → 월요일 09:00 KST 수집 (월요일 공휴일이면 화요일에 자동 수집)
 - 마지막 단계 "CSV 커밋 & 푸시"에서 git config + 일괄 커밋
 
 ### test_strength_breadth.yml
@@ -102,7 +106,7 @@ permissions:
 
 ## 주요 데이터 처리 규칙
 - **거래일 필터**: `result = result[result.index.isin(_index_close.index)]` → 공휴일·주말 데이터 자동 제거
-- **주말 조기 종료**: `if _base.weekday() >= 5: sys.exit(0)` (공휴일은 result 필터에서 자동 처리)
+- **비거래일 조기 종료**: `exchange_calendars` XKRX `is_session()` 기반 — 주말뿐 아니라 공휴일도 자동 skip
 - **Config.CUTOFF_HOUR=17**: 17시 이후 당일, 미만 전일 기준으로 수집
 
 ## index.html 전일값 표시
