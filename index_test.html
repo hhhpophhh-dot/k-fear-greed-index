@@ -219,15 +219,15 @@
     }
 
     .table-section { overflow: hidden; }
-    .table-section > div { overflow-x: auto; }
+    .tbl-scroll { overflow-x: auto; }
     table {
-      min-width: 100%;
+      width: 100%;
       border-collapse: collapse;
-      font-size: 0.79rem;
+      font-size: 0.74rem;
       white-space: nowrap;
     }
     th {
-      padding: 7px 10px;
+      padding: 5px 4px;
       text-align: right;
       color: var(--muted);
       font-weight: 500;
@@ -235,7 +235,7 @@
     }
     th:first-child { text-align: left; }
     td {
-      padding: 8px 10px;
+      padding: 6px 4px;
       text-align: right;
       border-bottom: 1px solid #21262d;
     }
@@ -668,7 +668,7 @@ function renderTable(wrapId, rows, factorCols, scoreLabel) {
       return `<td style="color:${scoreColor(v)}">${fmt(r[col])}</td>`;
     }).join("");
     return `<tr>
-      <td>${(r["날짜"] || "").slice(0, 10)}</td>
+      <td>${(r["날짜"] || "").slice(5, 10)}</td>
       ${factorCells}
       <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
       <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>
