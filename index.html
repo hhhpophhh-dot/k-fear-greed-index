@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>K-탐욕공포지수</title>
+  <title>K-탐욕공포지수 비교</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,6 +19,8 @@
       --border:       #30363d;
       --text:         #e6edf3;
       --muted:        #8b949e;
+      --k-color:      #58a6ff;
+      --k100-color:   #f78166;
     }
 
     body {
@@ -29,31 +31,46 @@
     }
 
     header {
-      padding: 20px 24px;
+      padding: 18px 24px;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       gap: 10px;
-      white-space: nowrap;
-      overflow: hidden;
     }
-    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.3px; flex-shrink: 0; }
-    header .subtitle { font-size: 0.78rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+    header h1 { font-size: 1.1rem; font-weight: 700; flex-shrink: 0; }
+    header .subtitle { font-size: 0.78rem; color: var(--muted); flex: 1; }
+
+    /* 뷰 토글 버튼 */
+    .view-toggle {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .view-toggle button {
+      padding: 5px 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .view-toggle button.active {
+      background: #21262d;
+      color: var(--text);
+      border-color: #58a6ff;
+    }
+    .view-toggle button:hover:not(.active) { background: #1c2128; }
 
     .main {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 28px 24px;
       display: grid;
-      gap: 24px;
-    }
-
-    /* ── 상단: 게이지 + 수치 ── */
-    .top-row {
-      display: grid;
-      grid-template-columns: 340px 1fr;
       gap: 20px;
-      align-items: start;
     }
 
     .card {
@@ -63,90 +80,117 @@
       padding: 24px;
     }
 
-    /* 게이지 */
-    .gauge-card { text-align: center; }
-    .gauge-wrap { position: relative; width: 260px; margin: 0 auto 12px; }
-    .gauge-wrap canvas { display: block; }
+    /* ── 상단 게이지 2개 나란히 ── */
+    .gauge-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .gauge-card {
+      text-align: center;
+      position: relative;
+    }
+
+    .gauge-universe-badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 99px;
+      margin-bottom: 12px;
+      letter-spacing: 0.3px;
+    }
+    .badge-k   { background: rgba(88,166,255,0.15); color: var(--k-color); border: 1px solid rgba(88,166,255,0.3); }
+    .badge-k100{ background: rgba(247,129,102,0.15); color: var(--k100-color); border: 1px solid rgba(247,129,102,0.3); }
+
+    .gauge-wrap { position: relative; width: 100%; max-width: 220px; margin: 0 auto 10px; aspect-ratio: 220 / 130; }
+    .gauge-wrap canvas { display: block; width: 100%; height: 100%; }
     .gauge-label {
       position: absolute;
-      bottom: 18px;
+      bottom: 14px;
       left: 50%;
       transform: translateX(-50%);
       text-align: center;
       pointer-events: none;
     }
-    .gauge-label .score {
-      font-size: 2.6rem;
-      font-weight: 800;
-      line-height: 1;
-    }
-    .gauge-label .grade {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-top: 4px;
-    }
-    .gauge-date { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+    .gauge-label .score { font-size: 2.4rem; font-weight: 800; line-height: 1; }
+    .gauge-label .grade { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+    .gauge-date { font-size: 0.76rem; color: var(--muted); margin-top: 4px; }
+    .gauge-updated { font-size: 0.73rem; color: var(--muted); margin-top: 2px; }
+
     .cnn-compare {
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      margin-top: 12px; padding: 8px 14px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      margin-top: 10px; padding: 7px 12px;
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-      font-size: 0.8rem; color: var(--muted);
+      font-size: 0.78rem; color: var(--muted);
     }
-    .cnn-compare .cnn-score {
-      font-size: 1.25rem; font-weight: 700; color: var(--text);
-    }
-    .cnn-compare .cnn-label { font-size: 0.72rem; }
+    .cnn-compare .cnn-score { font-size: 1.1rem; font-weight: 700; color: var(--text); }
 
-    /* 인자별 바 */
-    .factors-card {}
-    .factors-card h2 {
-      font-size: 0.85rem;
+    /* no-data 상태 */
+    .no-data-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 260px;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    .no-data-placeholder .icon { font-size: 2rem; opacity: 0.5; }
+
+    /* ── 비교 히스토리 차트 ── */
+    .chart-card h2,
+    .factors-row-card h2,
+    .table-section h2 {
+      font-size: 0.82rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       margin-bottom: 16px;
     }
-    .factor-row { margin-bottom: 14px; }
+
+    .chart-legend {
+      display: flex; gap: 18px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; color: var(--muted);
+    }
+    .legend-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+
+    .chart-wrap { position: relative; height: 240px; }
+
+    /* ── 인자별 바 2열 ── */
+    .factors-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .factors-col-header {
+      font-size: 0.76rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .factor-row { margin-bottom: 13px; }
     .factor-row:last-child { margin-bottom: 0; }
-    .factor-hl {
-      font-size: 0.68rem;
-      color: var(--muted);
-      margin-top: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .factor-hl .hl-hi { color: #1565c0; }
-    .factor-hl .hl-lo { color: #d32f2f; }
-
-    /* 하단 인자 설명 카드 */
-    .desc-card h2 {
-      font-size: 0.85rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 16px;
-    }
-    .desc-list { display: flex; flex-direction: column; gap: 8px; }
-    .desc-item { display: flex; align-items: baseline; gap: 8px; font-size: 0.78rem; white-space: nowrap; overflow: hidden; }
-    .desc-item dt { color: var(--text); font-weight: 600; flex-shrink: 0; min-width: 80px; }
-    .desc-item dd { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .desc-item.excluded { opacity: 0.45; }
-    .desc-item.excluded dt { text-decoration: line-through; }
-    .hide-pcr .pcr-col { display: none; }
-    .desc-divider { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
     .factor-header {
       display: flex;
       justify-content: space-between;
-      font-size: 0.82rem;
-      margin-bottom: 5px;
+      font-size: 0.8rem;
+      margin-bottom: 4px;
     }
     .factor-name { color: var(--text); }
-    .factor-val  { font-weight: 700; font-size: 0.85rem; }
-    .est-badge   { font-size: 10px; background: #555; color: #ccc; border-radius: 3px;
-                   padding: 1px 4px; margin-left: 5px; vertical-align: middle; cursor: default; }
+    .factor-val  { font-weight: 700; font-size: 0.83rem; }
     .bar-track {
-      height: 7px;
+      height: 6px;
       background: var(--border);
       border-radius: 99px;
       overflow: hidden;
@@ -156,34 +200,34 @@
       border-radius: 99px;
       transition: width 0.6s ease;
     }
-
-    /* ── 히스토리 차트 ── */
-    .chart-card h2 {
-      font-size: 0.85rem;
+    .factor-hl {
+      font-size: 0.67rem;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 16px;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .chart-wrap { position: relative; height: 220px; }
+    .factor-hl .hl-hi { color: #1565c0; }
+    .factor-hl .hl-lo { color: #d32f2f; }
 
-    /* ── 최근 10일 테이블 ── */
-    .table-card h2 {
-      font-size: 0.85rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 16px;
+    /* ── 최근 10일 테이블 2열 ── */
+    .table-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
     }
+
+    .table-section { overflow: hidden; }
     .tbl-scroll { overflow-x: auto; }
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.82rem;
+      font-size: 0.74rem;
       white-space: nowrap;
     }
     th {
-      padding: 8px 12px;
+      padding: 5px 4px;
       text-align: right;
       color: var(--muted);
       font-weight: 500;
@@ -191,222 +235,276 @@
     }
     th:first-child { text-align: left; }
     td {
-      padding: 9px 12px;
+      padding: 6px 4px;
       text-align: right;
       border-bottom: 1px solid #21262d;
     }
-    td:first-child { text-align: left; color: var(--muted); font-size: 0.79rem; }
+    td:first-child { text-align: left; color: var(--muted); font-size: 0.76rem; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #1c2128; }
 
     .badge {
       display: inline-block;
-      padding: 2px 8px;
+      padding: 2px 7px;
       border-radius: 99px;
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       font-weight: 600;
     }
 
     /* ── 색상 유틸 ── */
-    .c-ef  { color: var(--extreme-fear); }
-    .c-f   { color: var(--fear); }
-    .c-n   { color: var(--neutral); }
-    .c-g   { color: var(--greed); }
-    .c-eg  { color: var(--extreme-greed); }
-
     .bg-ef  { background: rgba(211,47,47,.18);  color: var(--extreme-fear); }
     .bg-f   { background: rgba(245,124,0,.18);  color: var(--fear); }
     .bg-n   { background: rgba(251,192,45,.18); color: var(--neutral); }
     .bg-g   { background: rgba(56,142,60,.18);  color: var(--greed); }
     .bg-eg  { background: rgba(21,101,192,.18); color: var(--extreme-greed); }
 
-    /* ── 탭 ── */
-    .tab-bar {
-      border-bottom: 1px solid var(--border);
-      padding: 0 24px;
-      display: flex;
-      gap: 2px;
-    }
-    .tab-btn {
-      padding: 10px 18px;
+    /* ── 인자 설명 카드 ── */
+    .desc-card h2 {
       font-size: 0.82rem;
-      font-weight: 600;
-      background: none;
-      border: none;
-      border-bottom: 2px solid transparent;
       color: var(--muted);
-      cursor: pointer;
-      margin-bottom: -1px;
-      transition: color 0.15s, border-color 0.15s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 14px;
     }
-    .tab-btn:hover  { color: var(--text); }
-    .tab-btn.active { color: var(--text); border-bottom-color: #58a6ff; }
+    .desc-list { display: flex; flex-direction: column; gap: 7px; }
+    .desc-item { display: flex; align-items: baseline; gap: 8px; font-size: 0.77rem; }
+    .desc-item dt { color: var(--text); font-weight: 600; flex-shrink: 0; min-width: 80px; }
+    .desc-item dd { color: var(--muted); }
+    .desc-item.excluded { opacity: 0.4; }
+    .desc-item.excluded dt { text-decoration: line-through; }
 
-    /* loading */
+    /* ── 로딩 ── */
     #loading {
       position: fixed; inset: 0;
       background: var(--bg);
       display: flex; align-items: center; justify-content: center;
-      flex-direction: column; gap: 16px;
       font-size: 0.9rem; color: var(--muted);
       z-index: 999;
     }
-    #file-fallback {
-      display: flex; flex-direction: column; align-items: center; gap: 12px;
-      text-align: center;
+
+    /* ── 반응형 ── */
+    @media (max-width: 700px) {
+      .main { padding: 12px; gap: 12px; }
+      /* 게이지·인자 바: 2컬럼 유지 (가로 비교) */
+      .gauge-wrap { max-width: 160px; }
+      .gauge-label .score { font-size: 1.9rem; }
+      /* 테이블만 단일 컬럼 (너무 좁아 가독성 저하) */
+      .table-row { grid-template-columns: 1fr; }
+      .view-toggle { display: none; }
     }
-    #file-fallback p { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
-    #file-fallback label {
-      display: inline-block;
-      padding: 10px 22px;
-      background: #21262d;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      color: var(--text);
-      transition: background 0.2s;
-    }
-    #file-fallback label:hover { background: #30363d; }
-    #file-input { display: none; }
+
+    /* ── 모바일 프리뷰: 배경 딤 처리 ── */
+    body.mobile-preview { background: #000; }
+    body.mobile-preview header { max-width: 390px; margin: 0 auto; }
   </style>
 </head>
 <body>
 
-<div id="loading">
-  <span id="loading-msg">데이터 불러오는 중…</span>
-  <div id="file-fallback" style="display:none">
-    <p>로컬에서 직접 열었을 때는 CSV 파일을 선택해주세요.<br>
-       <strong style="color:var(--text)">k_fear_greed_result.csv</strong> 파일을 선택하면 됩니다.</p>
-    <label for="file-input">📂 CSV 파일 선택</label>
-    <input type="file" id="file-input" accept=".csv" />
-  </div>
-</div>
+<div id="loading">데이터 불러오는 중…</div>
 
 <header>
   <h1>🇰🇷 K-탐욕공포지수</h1>
-  <span class="subtitle">KOSPI 기반 Fear &amp; Greed Index</span>
+  <span class="subtitle">KOSPI 전체 vs KOSPI 100 비교</span>
+  <div class="view-toggle">
+    <button id="btnPC" class="active" onclick="setView('pc')">🖥 PC</button>
+    <button id="btnMobile" onclick="setView('mobile')">📱 모바일</button>
+  </div>
 </header>
-
-<div class="tab-bar">
-  <button class="tab-btn active" data-universe="all" onclick="switchTab(this)">KOSPI 전체</button>
-  <button class="tab-btn" data-universe="k100" onclick="switchTab(this)" style="display:none">KOSPI 100</button>
-</div>
 
 <div class="main">
 
-  <!-- 상단 행 -->
-  <div class="top-row">
-    <!-- 게이지 -->
+  <!-- 게이지 2개 나란히 -->
+  <div class="gauge-row">
+    <!-- K지수 게이지 -->
     <div class="card gauge-card">
+      <div class="gauge-universe-badge badge-k">KOSPI 전체</div>
       <div class="gauge-wrap">
-        <canvas id="gaugeCanvas" width="260" height="150"></canvas>
+        <canvas id="gaugeK" width="1" height="1"></canvas>
         <div class="gauge-label">
-          <div class="score" id="gaugeScore">—</div>
-          <div class="grade" id="gaugeGrade">—</div>
+          <div class="score" id="scoreK">—</div>
+          <div class="grade" id="gradeK">—</div>
         </div>
       </div>
-      <div class="gauge-date" id="gaugeDate">—</div>
-      <div class="gauge-date" id="gaugeUpdated" style="margin-top:2px;"></div>
+      <div class="gauge-date" id="dateK">—</div>
+      <div class="gauge-updated" id="updatedK"></div>
       <div class="cnn-compare" id="cnnCompare" style="display:none;">
-        <span class="cnn-label">CNN Fear &amp; Greed</span>
+        <span style="font-size:0.75rem">CNN Fear &amp; Greed</span>
         <span class="cnn-score" id="cnnScore">—</span>
-        <span id="cnnRating" style="font-weight:600;"></span>
+        <span id="cnnRating" style="font-weight:600; font-size:0.75rem;"></span>
       </div>
     </div>
 
-    <!-- 인자별 바 -->
-    <div class="card factors-card">
-      <h2>인자별 점수 (최신)</h2>
-      <div id="factorBars"></div>
+    <!-- K100지수 게이지 -->
+    <div class="card gauge-card" id="gaugeCardK100">
+      <div class="gauge-universe-badge badge-k100">KOSPI 100</div>
+      <!-- 데이터 있을 때 표시 -->
+      <div id="gaugeK100DataWrap" style="display:none">
+        <div class="gauge-wrap">
+          <canvas id="gaugeK100" width="1" height="1"></canvas>
+          <div class="gauge-label">
+            <div class="score" id="scoreK100">—</div>
+            <div class="grade" id="gradeK100">—</div>
+          </div>
+        </div>
+        <div class="gauge-date" id="dateK100">—</div>
+        <div class="gauge-updated" id="updatedK100"></div>
+      </div>
+      <!-- 데이터 없을 때 -->
+      <div id="gaugeK100Wrap">
+        <div class="no-data-placeholder">
+          <span class="icon">📊</span>
+          <span>데이터 준비 중</span>
+          <span style="font-size:0.75rem;">k_fear_greed_result_k100.csv</span>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- 히스토리 차트 -->
+  <!-- 비교 히스토리 차트 -->
   <div class="card chart-card">
-    <h2>지수 추이 (최근 60일)</h2>
+    <h2>지수 추이 비교 (최근 60일)</h2>
+    <div class="chart-legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:var(--k-color)"></div>
+        <span>KOSPI 전체 (K-지수)</span>
+      </div>
+      <div class="legend-item" id="legendK100" style="display:none;">
+        <div class="legend-dot" style="background:var(--k100-color)"></div>
+        <span>KOSPI 100 (K100-지수)</span>
+      </div>
+    </div>
     <div class="chart-wrap">
       <canvas id="historyChart"></canvas>
     </div>
   </div>
 
-  <!-- 최근 10일 테이블 -->
-  <div class="card table-card">
-    <h2>최근 10일 인자별 점수</h2>
-    <div class="tbl-scroll">
-      <table id="recentTable">
-        <thead>
-          <tr>
-            <th>날짜</th>
-            <th>모멘텀</th>
-            <th>강도</th>
-            <th>폭</th>
-            <th class="pcr-col">풋/콜</th>
-            <th>신용</th>
-            <th>변동성</th>
-            <th>안전자산</th>
-            <th>K-지수</th>
-            <th>등급</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+  <!-- 인자별 바 2열 -->
+  <div class="card">
+    <h2 style="font-size:0.82rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px;">인자별 점수 (최신)</h2>
+    <div class="factors-row">
+      <div>
+        <div class="factors-col-header" style="color:var(--k-color)">KOSPI 전체</div>
+        <div id="factorBarsK"></div>
+      </div>
+      <div>
+        <div class="factors-col-header" style="color:var(--k100-color)">KOSPI 100</div>
+        <div id="factorBarsK100">
+          <div class="no-data-placeholder" style="min-height:120px;">
+            <span style="font-size:0.82rem;color:var(--muted);">데이터 준비 중</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 최근 10일 테이블 2열 -->
+  <div class="card">
+    <h2 style="font-size:0.82rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px;">최근 10일 인자별 점수</h2>
+    <div class="table-row">
+      <div class="table-section">
+        <div style="font-size:0.76rem;font-weight:700;color:var(--k-color);margin-bottom:10px;">KOSPI 전체</div>
+        <div class="tbl-scroll" id="tableWrapK"></div>
+      </div>
+      <div class="table-section">
+        <div style="font-size:0.76rem;font-weight:700;color:var(--k100-color);margin-bottom:10px;">KOSPI 100</div>
+        <div id="tableK100Wrap">
+          <div class="no-data-placeholder" style="min-height:100px;">
+            <span style="font-size:0.82rem;color:var(--muted);">데이터 준비 중</span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- 인자 설명 -->
   <div class="card desc-card">
     <h2>인자별 산출 방법</h2>
-    <dl class="desc-list">
-      <div class="desc-item">
+    <dl class="desc-list" id="descList">
+      <div class="desc-item" data-factor="주가_모멘텀">
         <dt>주가 모멘텀</dt>
         <dd>KOSPI 종가 vs 125일 이동평균 — 종가가 MA 위에 있을수록 탐욕</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="주가_강도">
         <dt>주가 강도</dt>
         <dd>52주 신고가 종목 수 / (신고가 + 신저가) — 신고가 비율이 높을수록 탐욕</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="주가_폭">
         <dt>주가 폭</dt>
         <dd>거래량 기반 McClellan Summation Index — 상승 종목 거래량 비중이 높을수록 탐욕</dd>
       </div>
-      <div class="desc-item excluded" id="pcrDescItem">
+      <div class="desc-item" data-factor="풋콜_비율">
         <dt>풋/콜 비율</dt>
-        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향) · 데이터 수집 중</dd>
+        <dd>KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위일수록 공포 (역방향) · 데이터 수집 중</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="신용스프레드">
         <dt>신용스프레드</dt>
         <dd>회사채 BBB- 3년물 − 국고채 3년물 — 스프레드가 좁을수록 탐욕 (역방향)</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="시장_변동성">
         <dt>시장 변동성</dt>
         <dd>KOSPI 20일 실현변동성 (연율화, VKOSPI 대체) — 변동성이 낮을수록 탐욕 (역방향)</dd>
       </div>
-      <div class="desc-item">
+      <div class="desc-item" data-factor="안전자산_수요">
         <dt>안전자산 수요</dt>
         <dd>KOSPI 20일 수익률 − 국고채 3년물 20일 금리변화 — 주식 우세일수록 탐욕</dd>
       </div>
     </dl>
   </div>
 
-
 </div><!-- /.main -->
 
 <script>
 // ──────────────────────────────────────────
+// 상수: 인자가 아닌 메타 컬럼 목록
+// CSV 헤더에서 이것들을 제외한 나머지가 자동으로 인자 컬럼이 됨
+// ──────────────────────────────────────────
+const META_COLS = new Set([
+  "날짜", "K_탐욕공포지수", "등급", "업데이트_시각",
+  "CNN_탐욕공포지수", "CNN_등급", "신고가_종목수", "신저가_종목수",
+]);
+
+// 컬럼명 → 한글 표시명 (없으면 언더스코어를 공백으로 대체)
+const LABEL_MAP = {
+  "주가_모멘텀":   "주가 모멘텀",
+  "주가_강도":     "주가 강도",
+  "주가_폭":       "주가 폭",
+  "풋콜_비율":     "풋/콜 비율",
+  "신용스프레드":  "신용스프레드",
+  "시장_변동성":   "시장 변동성",
+  "안전자산_수요": "안전자산 수요",
+};
+// 테이블 축약 헤더
+const SHORT_MAP = {
+  "주가_모멘텀":   "모멘텀",
+  "주가_강도":     "강도",
+  "주가_폭":       "폭",
+  "풋콜_비율":     "풋/콜",
+  "신용스프레드":  "신용",
+  "시장_변동성":   "변동성",
+  "안전자산_수요": "안전자산",
+};
+
+function colLabel(col)  { return LABEL_MAP[col]  ?? col.replace(/_/g, " "); }
+function colShort(col)  { return SHORT_MAP[col]  ?? col.replace(/_/g, " "); }
+
+// CSV 헤더에서 인자 컬럼만 추출
+function getFactorCols(headers) {
+  return headers.filter(h => h && !META_COLS.has(h));
+}
+
+// ──────────────────────────────────────────
 // 유틸
 // ──────────────────────────────────────────
-let hasPCR = false;  // CSV에 풋콜_비율 유효 데이터가 있을 때만 true
-
 const GRADE_MAP = {
-  "극단적 공포": { cls: "c-ef", bgCls: "bg-ef", hex: "#d32f2f" },
-  "공포":        { cls: "c-f",  bgCls: "bg-f",  hex: "#f57c00" },
-  "중립":        { cls: "c-n",  bgCls: "bg-n",  hex: "#fbc02d" },
-  "탐욕":        { cls: "c-g",  bgCls: "bg-g",  hex: "#388e3c" },
-  "극단적 탐욕": { cls: "c-eg", bgCls: "bg-eg", hex: "#1565c0" },
+  "극단적 공포": { bgCls: "bg-ef", hex: "#d32f2f" },
+  "공포":        { bgCls: "bg-f",  hex: "#f57c00" },
+  "중립":        { bgCls: "bg-n",  hex: "#fbc02d" },
+  "탐욕":        { bgCls: "bg-g",  hex: "#388e3c" },
+  "극단적 탐욕": { bgCls: "bg-eg", hex: "#1565c0" },
 };
 
 function scoreColor(score) {
+  if (isNaN(score)) return "#8b949e";
   if (score <= 25) return "#d32f2f";
   if (score <= 45) return "#f57c00";
   if (score <= 55) return "#fbc02d";
@@ -415,60 +513,44 @@ function scoreColor(score) {
 }
 
 function fmt(val) {
-  return isNaN(val) ? "—" : Number(val).toFixed(1);
+  const n = parseFloat(val);
+  return isNaN(n) ? "—" : n.toFixed(1);
 }
 
-// ──────────────────────────────────────────
-// CSV 파싱 (BOM 대응 포함)
-// ──────────────────────────────────────────
 function parseCSV(text) {
   const lines = text.replace(/^﻿/, "").trim().split("\n");
   const headers = lines[0].split(",").map(h => h.trim());
-  return lines.slice(1).map(line => {
+  const rows = lines.slice(1).map(line => {
     const vals = line.split(",").map(v => v.trim());
     const obj = {};
     headers.forEach((h, i) => obj[h] = vals[i] ?? "");
     return obj;
   });
+  return { headers, rows };
 }
 
 // ──────────────────────────────────────────
-// 전일값 forward-fill: 빈값인 인자를 직전 유효값으로 채우고 _추정 플래그 설정
+// 게이지 그리기
 // ──────────────────────────────────────────
-const FACTOR_KEYS = ["주가_모멘텀","주가_강도","주가_폭","풋콜_비율","신용스프레드","시장_변동성","안전자산_수요"];
-function applyForwardFill(rows) {
-  const lastKnown = {};
-  return rows.map(r => {
-    const nr = {...r};
-    FACTOR_KEYS.forEach(k => {
-      const v = parseFloat(r[k]);
-      if (!isNaN(v)) {
-        lastKnown[k] = r[k];
-        nr[k + "_est"] = false;
-      } else if (lastKnown[k] !== undefined) {
-        nr[k] = lastKnown[k];
-        nr[k + "_est"] = true;
-      } else {
-        nr[k + "_est"] = false;
-      }
-    });
-    return nr;
-  });
-}
-
-// ──────────────────────────────────────────
-// 게이지 (반원 도넛)
-// ──────────────────────────────────────────
-function drawGauge(score) {
-  const canvas = document.getElementById("gaugeCanvas");
+function drawGauge(canvasId, score) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const wrap = canvas.closest(".gauge-wrap");
+  if (!wrap) return;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
   const ctx = canvas.getContext("2d");
-  const W = canvas.width, H = canvas.height;
-  const cx = W / 2, cy = H - 20;
-  const R = 105, thick = 22;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
 
-  ctx.clearRect(0, 0, W, H);
+  const scale = W / 220;
+  const cx = W / 2, cy = H - 14 * scale;
+  const R = 88 * scale, thick = 18 * scale;
 
-  // 배경 트랙
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   const segments = [
     { from: Math.PI, to: Math.PI * 1.2, color: "#d32f2f" },
     { from: Math.PI * 1.2, to: Math.PI * 1.4, color: "#f57c00" },
@@ -482,107 +564,81 @@ function drawGauge(score) {
     ctx.strokeStyle = s.color;
     ctx.lineWidth = thick;
     ctx.lineCap = "butt";
-    ctx.globalAlpha = 0.3;
+    ctx.globalAlpha = 0.28;
     ctx.stroke();
     ctx.globalAlpha = 1;
   });
 
-  // 현재 값 포인터 (두꺼운 선 오버레이)
   const angle = Math.PI + (score / 100) * Math.PI;
   const span  = Math.PI * 0.04;
-  const aFrom = Math.max(Math.PI, angle - span);
-  const aTo   = Math.min(Math.PI * 2, angle + span);
-
   ctx.beginPath();
-  ctx.arc(cx, cy, R, aFrom, aTo);
+  ctx.arc(cx, cy, R, Math.max(Math.PI, angle - span), Math.min(Math.PI * 2, angle + span));
   ctx.strokeStyle = scoreColor(score);
-  ctx.lineWidth = thick + 4;
+  ctx.lineWidth = thick + 4 * scale;
   ctx.lineCap = "round";
-  ctx.globalAlpha = 1;
   ctx.stroke();
 
-  // 니들 (바늘)
-  const nx = cx + (R) * Math.cos(angle);
-  const ny = cy + (R) * Math.sin(angle);
+  const nx = cx + R * Math.cos(angle);
+  const ny = cy + R * Math.sin(angle);
   ctx.beginPath();
   ctx.moveTo(cx, cy);
   ctx.lineTo(nx, ny);
   ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2 * scale;
   ctx.lineCap = "round";
   ctx.globalAlpha = 0.9;
   ctx.stroke();
-
-  // 중심 점
-  ctx.beginPath();
-  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
-  ctx.fillStyle = "#fff";
   ctx.globalAlpha = 1;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4 * scale, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
   ctx.fill();
 
-  // 눈금 라벨
-  const ticks = [
-    { val: 0,   label: "0" },
-    { val: 25,  label: "25" },
-    { val: 50,  label: "50" },
-    { val: 75,  label: "75" },
-    { val: 100, label: "100" },
-  ];
-  ctx.font = "10px sans-serif";
+  const ticks = [{ val: 0 }, { val: 25 }, { val: 50 }, { val: 75 }, { val: 100 }];
+  ctx.font = `${Math.round(9 * scale)}px sans-serif`;
   ctx.fillStyle = "#8b949e";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ticks.forEach(t => {
     const a = Math.PI + (t.val / 100) * Math.PI;
-    const lx = cx + (R + 18) * Math.cos(a);
-    const ly = cy + (R + 18) * Math.sin(a);
-    ctx.fillText(t.label, lx, ly);
+    ctx.fillText(t.val, cx + (R + 15 * scale) * Math.cos(a), cy + (R + 15 * scale) * Math.sin(a));
   });
 }
 
 // ──────────────────────────────────────────
-// 인자별 바
+// 인자별 바 (factorCols: CSV에서 추출된 인자 컬럼 배열)
+// rows: 전체 데이터셋 (인자 존재 여부 판단용)
 // ──────────────────────────────────────────
-const FACTOR_LABELS = {
-  "주가_모멘텀":   "주가 모멘텀",
-  "주가_강도":     "주가 강도",
-  "주가_폭":       "주가 폭",
-  "풋콜_비율":     "풋/콜 비율",
-  "신용스프레드":  "신용스프레드",
-  "시장_변동성":   "시장 변동성",
-  "안전자산_수요": "안전자산 수요",
-};
-
-function renderFactorBars(row) {
-  const container = document.getElementById("factorBars");
+function renderFactorBars(containerId, row, factorCols) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
   container.innerHTML = "";
-  Object.keys(FACTOR_LABELS).forEach(key => {
-    if (key === "풋콜_비율" && !hasPCR) return;  // 데이터 없으면 바 표시 안 함
-    const val = parseFloat(row[key]);
+
+  factorCols.forEach(key => {
+    const val   = row ? parseFloat(row[key]) : NaN;
     const color = scoreColor(val);
-    const label = FACTOR_LABELS[key];
-    const isEst = row[key + "_est"];
-    const div = document.createElement("div");
+    const label = colLabel(key);
+    const div   = document.createElement("div");
     div.className = "factor-row";
 
     let extra = "";
-    if (key === "주가_강도") {
+    if (key === "주가_강도" && row) {
       const hi = parseInt(row["신고가_종목수"]);
       const lo = parseInt(row["신저가_종목수"]);
       if (!isNaN(hi) && !isNaN(lo)) {
-        const total = hi + lo;
-        const pct = total > 0 ? (hi / total * 100).toFixed(1) : "—";
-        extra = `<div class="factor-hl">52주 신고가 <span class="hl-hi">${hi}개</span> · 신저가 <span class="hl-lo">${lo}개</span> · 비율 ${pct}%</div>`;
+        const pct = (hi + lo) > 0 ? (hi / (hi + lo) * 100).toFixed(1) : "—";
+        extra = `<div class="factor-hl">신고가 <span class="hl-hi">${hi}개</span> · 신저가 <span class="hl-lo">${lo}개</span> · ${pct}%</div>`;
       }
     }
 
     div.innerHTML = `
       <div class="factor-header">
-        <span class="factor-name">${label}${isEst ? '<span class="est-badge" title="직전 거래일 값 사용">전일</span>' : ''}</span>
-        <span class="factor-val" style="color:${color}">${fmt(val)}</span>
+        <span class="factor-name">${label}</span>
+        <span class="factor-val" style="color:${isNaN(val) ? 'var(--muted)' : color}">${row ? fmt(row[key]) : "—"}</span>
       </div>
       <div class="bar-track">
-        <div class="bar-fill" style="width:${val}%;background:${color}"></div>
+        <div class="bar-fill" style="width:${isNaN(val) ? 0 : val}%;background:${isNaN(val) ? 'var(--border)' : color}"></div>
       </div>
       ${extra}`;
     container.appendChild(div);
@@ -590,38 +646,111 @@ function renderFactorBars(row) {
 }
 
 // ──────────────────────────────────────────
-// 히스토리 라인 차트
+// 최근 10일 테이블 (헤더 포함 전체를 동적 생성)
+// ──────────────────────────────────────────
+function renderTable(wrapId, rows, factorCols, scoreLabel) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+
+  // 테이블 헤더 동적 생성 — 모든 인자 표시 (양쪽 열 개수 통일)
+  const thCells = [`<th>날짜</th>`]
+    .concat(factorCols.map(col => `<th>${colShort(col)}</th>`))
+    .concat([`<th>${scoreLabel || "K-지수"}</th>`, `<th>등급</th>`])
+    .join("");
+
+  const last10 = rows.slice(-10).reverse();
+  const trRows = last10.map(r => {
+    const score = parseFloat(r["K_탐욕공포지수"]);
+    const grade = r["등급"] || "—";
+    const ginfo = GRADE_MAP[grade] || { bgCls: "", hex: "#8b949e" };
+    const factorCells = factorCols.map(col => {
+      const v = parseFloat(r[col]);
+      return `<td style="color:${scoreColor(v)}">${fmt(r[col])}</td>`;
+    }).join("");
+    return `<tr>
+      <td>${(r["날짜"] || "").slice(5, 10)}</td>
+      ${factorCells}
+      <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
+      <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>
+    </tr>`;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>${thCells}</tr></thead>
+      <tbody>${trRows}</tbody>
+    </table>`;
+}
+
+// ──────────────────────────────────────────
+// 설명 카드: CSV에 없는 인자는 취소선(excluded) 처리
+// ──────────────────────────────────────────
+function renderDescCard(factorCols) {
+  const colSet = new Set(factorCols);
+  document.querySelectorAll("#descList .desc-item[data-factor]").forEach(el => {
+    const col = el.dataset.factor;
+    const active = colSet.has(col);
+    el.classList.toggle("excluded", !active);
+  });
+}
+
+// ──────────────────────────────────────────
+// 히스토리 차트 (K + K100 두 선)
 // ──────────────────────────────────────────
 let histChart = null;
-function renderHistoryChart(rows) {
-  const labels  = rows.map(r => r["날짜"].slice(0, 10));
-  const scores  = rows.map(r => parseFloat(r["K_탐욕공포지수"]));
-  const colors  = scores.map(scoreColor);
 
-  const ctx = document.getElementById("historyChart").getContext("2d");
+function renderHistoryChart(rowsK, rowsK100) {
+  const labelsK   = rowsK.map(r => r["날짜"].slice(0, 10));
+  const scoresK   = rowsK.map(r => parseFloat(r["K_탐욕공포지수"]));
+  const colorsK   = scoresK.map(scoreColor);
+
+  // K100 데이터 있을 때 날짜 기준 매핑
+  const k100Map = {};
+  if (rowsK100) {
+    rowsK100.forEach(r => { k100Map[r["날짜"].slice(0, 10)] = parseFloat(r["K_탐욕공포지수"]); });
+  }
+  const scoresK100 = rowsK100 ? labelsK.map(d => k100Map[d] ?? null) : null;
+
+  const canvasCtx = document.getElementById("historyChart").getContext("2d");
   if (histChart) histChart.destroy();
 
-  // 배경 영역 채우기용 그라디언트
-  const grad = ctx.createLinearGradient(0, 0, 0, 220);
-  grad.addColorStop(0, "rgba(56,142,60,0.25)");
-  grad.addColorStop(1, "rgba(56,142,60,0)");
+  const gradK = canvasCtx.createLinearGradient(0, 0, 0, 240);
+  gradK.addColorStop(0, "rgba(88,166,255,0.15)");
+  gradK.addColorStop(1, "rgba(88,166,255,0)");
 
-  histChart = new Chart(ctx, {
+  const datasets = [{
+    label: "KOSPI 전체",
+    data: scoresK,
+    borderColor: "#58a6ff",
+    borderWidth: 2,
+    backgroundColor: gradK,
+    pointBackgroundColor: colorsK,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    tension: 0.3,
+    fill: true,
+  }];
+
+  if (scoresK100) {
+    datasets.push({
+      label: "KOSPI 100",
+      data: scoresK100,
+      borderColor: "#f78166",
+      borderWidth: 2,
+      backgroundColor: "transparent",
+      pointBackgroundColor: scoresK100.map(v => v !== null ? scoreColor(v) : "transparent"),
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      fill: false,
+      spanGaps: true,
+    });
+    document.getElementById("legendK100").style.display = "flex";
+  }
+
+  histChart = new Chart(canvasCtx, {
     type: "line",
-    data: {
-      labels,
-      datasets: [{
-        data: scores,
-        borderColor: "#58a6ff",
-        borderWidth: 2,
-        backgroundColor: grad,
-        pointBackgroundColor: colors,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        tension: 0.3,
-        fill: true,
-      }],
-    },
+    data: { labels: labelsK, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -630,7 +759,7 @@ function renderHistoryChart(rows) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: ctx => ` K-지수: ${ctx.raw.toFixed(1)}`,
+            label: c => ` ${c.dataset.label}: ${c.raw !== null ? c.raw.toFixed(1) : "—"}`,
           },
           backgroundColor: "#21262d",
           titleColor: "#8b949e",
@@ -641,187 +770,211 @@ function renderHistoryChart(rows) {
       },
       scales: {
         x: {
-          ticks: {
-            color: "#8b949e",
-            maxRotation: 0,
-            maxTicksLimit: 10,
-            font: { size: 10 },
-          },
+          ticks: { color: "#8b949e", maxRotation: 0, maxTicksLimit: 10, font: { size: 10 } },
           grid: { color: "#21262d" },
         },
         y: {
           min: 0, max: 100,
-          ticks: {
-            color: "#8b949e",
-            font: { size: 10 },
-            callback: v => v,
-          },
+          ticks: { color: "#8b949e", font: { size: 10 } },
           grid: { color: "#21262d" },
         },
       },
     },
   });
 
-  // 구간 배경 플러그인 (공포/탐욕 배경)
   Chart.register({
     id: "bandsBg",
     beforeDraw(chart) {
-      const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
+      const { ctx, chartArea: { left, right }, scales: { y } } = chart;
       const bands = [
-        { min: 0,  max: 25,  color: "rgba(211,47,47,0.07)" },
-        { min: 25, max: 45,  color: "rgba(245,124,0,0.07)" },
-        { min: 45, max: 55,  color: "rgba(251,192,45,0.05)" },
-        { min: 55, max: 75,  color: "rgba(56,142,60,0.07)" },
-        { min: 75, max: 100, color: "rgba(21,101,192,0.07)" },
+        { min: 0,  max: 25,  color: "rgba(211,47,47,0.06)" },
+        { min: 25, max: 45,  color: "rgba(245,124,0,0.06)" },
+        { min: 45, max: 55,  color: "rgba(251,192,45,0.04)" },
+        { min: 55, max: 75,  color: "rgba(56,142,60,0.06)" },
+        { min: 75, max: 100, color: "rgba(21,101,192,0.06)" },
       ];
       bands.forEach(b => {
-        const yTop = y.getPixelForValue(b.max);
-        const yBot = y.getPixelForValue(b.min);
         ctx.fillStyle = b.color;
-        ctx.fillRect(left, yTop, right - left, yBot - yTop);
+        ctx.fillRect(left, y.getPixelForValue(b.max), right - left, y.getPixelForValue(b.min) - y.getPixelForValue(b.max));
       });
     },
   });
 }
 
 // ──────────────────────────────────────────
-// 최근 10일 테이블
+// K100 게이지: 플레이스홀더 숨기고 실제 데이터 표시
 // ──────────────────────────────────────────
-function renderTable(rows) {
-  const last10 = rows.slice(-10).reverse();
-  const tbody = document.getElementById("tableBody");
-  tbody.innerHTML = "";
-  last10.forEach(r => {
-    const score = parseFloat(r["K_탐욕공포지수"]);
-    const grade = r["등급"] || "—";
-    const ginfo = GRADE_MAP[grade] || { cls: "", bgCls: "", hex: "#8b949e" };
-    const estBadge = key => r[key + "_est"] ? '<span class="est-badge" title="직전 거래일 값 사용">전일</span>' : "";
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${r["날짜"].slice(0, 10)}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_모멘텀']))}">${fmt(r['주가_모멘텀'])}${estBadge('주가_모멘텀')}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_강도']))}">${fmt(r['주가_강도'])}${estBadge('주가_강도')}</td>
-      <td style="color:${scoreColor(parseFloat(r['주가_폭']))}">${fmt(r['주가_폭'])}${estBadge('주가_폭')}</td>
-      <td class="pcr-col" style="color:${scoreColor(parseFloat(r['풋콜_비율']))}">${fmt(r['풋콜_비율'])}${estBadge('풋콜_비율')}</td>
-      <td style="color:${scoreColor(parseFloat(r['신용스프레드']))}">${fmt(r['신용스프레드'])}${estBadge('신용스프레드')}</td>
-      <td style="color:${scoreColor(parseFloat(r['시장_변동성']))}">${fmt(r['시장_변동성'])}${estBadge('시장_변동성')}</td>
-      <td style="color:${scoreColor(parseFloat(r['안전자산_수요']))}">${fmt(r['안전자산_수요'])}${estBadge('안전자산_수요')}</td>
-      <td style="color:${ginfo.hex};font-weight:700">${fmt(score)}</td>
-      <td><span class="badge ${ginfo.bgCls}">${grade}</span></td>`;
-    tbody.appendChild(tr);
-  });
+function showK100Gauge() {
+  document.getElementById("gaugeK100Wrap").style.display = "none";
+  document.getElementById("gaugeK100DataWrap").style.display = "";
 }
 
 // ──────────────────────────────────────────
-// 렌더 공통 함수
+// 렌더 메인 (K 또는 K100 공용)
 // ──────────────────────────────────────────
-function renderAll(text) {
-  const rows = applyForwardFill(parseCSV(text).filter(r => r["날짜"] && r["K_탐욕공포지수"]));
-  if (rows.length === 0) {
-    document.getElementById("loading-msg").textContent = "⚠️ CSV 데이터가 비어있습니다.";
-    return;
-  }
+function renderUniverse({ text, gaugeId, scoreId, gradeId, dateId, updatedId,
+                           factorBarsId, tableWrapId, scoreLabel, isMaster }) {
+  const { headers, rows: allRows } = parseCSV(text);
+  const rows = allRows.filter(r => r["날짜"] && r["K_탐욕공포지수"]);
+  if (!rows.length) return null;
 
+  const factorCols = getFactorCols(headers);
   const latest = rows[rows.length - 1];
   const score  = parseFloat(latest["K_탐욕공포지수"]);
   const grade  = latest["등급"] || "—";
-  const ginfo  = GRADE_MAP[grade] || { cls: "", hex: "#8b949e" };
+  const ginfo  = GRADE_MAP[grade] || { hex: "#8b949e" };
 
-  // PCR 데이터 존재 여부 확인 → UI 동적 제어
-  hasPCR = rows.some(r => r["풋콜_비율"] && !isNaN(parseFloat(r["풋콜_비율"])));
-  const table = document.getElementById("recentTable");
-  if (hasPCR) {
-    table.classList.remove("hide-pcr");
-    const pcrItem = document.getElementById("pcrDescItem");
-    if (pcrItem) { pcrItem.classList.remove("excluded"); pcrItem.querySelector("dd").textContent = "KOSPI200 옵션 풋 거래량 / 콜 거래량 — 풋 매수 우위(비율 높음)일수록 공포 (역방향)"; }
+  // 게이지
+  drawGauge(gaugeId, score);
+  document.getElementById(scoreId).textContent = score.toFixed(1);
+  document.getElementById(scoreId).style.color = ginfo.hex;
+  document.getElementById(gradeId).textContent = grade;
+  document.getElementById(dateId).textContent = `기준일: ${latest["날짜"].slice(0, 10)}`;
+  const updEl = document.getElementById(updatedId);
+  if (updEl) updEl.textContent = latest["업데이트_시각"] ? `(업데이트: ${latest["업데이트_시각"]} KST)` : "";
+
+  // CNN 비교 (K 메인에서만)
+  if (isMaster) {
+    const cnnScore  = parseFloat(latest["CNN_탐욕공포지수"]);
+    const cnnRating = latest["CNN_등급"] || "";
+    if (!isNaN(cnnScore) && cnnRating) {
+      const CNN_KO = {
+        "extreme fear": { ko: "극단적 공포", hex: "#d32f2f" },
+        "fear":         { ko: "공포",        hex: "#f57c00" },
+        "neutral":      { ko: "중립",        hex: "#fbc02d" },
+        "greed":        { ko: "탐욕",        hex: "#388e3c" },
+        "extreme greed":{ ko: "극단적 탐욕", hex: "#1565c0" },
+      };
+      const info = CNN_KO[cnnRating.toLowerCase()] || { ko: cnnRating, hex: "var(--text)" };
+      document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
+      const el = document.getElementById("cnnRating");
+      el.textContent = `${info.ko} (${cnnRating})`;
+      el.style.color = info.hex;
+      document.getElementById("cnnCompare").style.display = "flex";
+    }
+    // 설명 카드: K 기준 인자 목록으로 표시 제어
+    renderDescCard(factorCols);
+  }
+
+  // 인자 바 & 테이블은 init()에서 통합 factorCols로 다시 렌더
+  return { rows, factorCols };
+}
+
+// ──────────────────────────────────────────
+// 로딩
+// ──────────────────────────────────────────
+async function init() {
+  let resultK = null, resultK100 = null;
+
+  try {
+    const res = await fetch("k_fear_greed_result.csv");
+    if (!res.ok) throw new Error();
+    resultK = renderUniverse({
+      text:        await res.text(),
+      gaugeId:     "gaugeK",
+      scoreId:     "scoreK",
+      gradeId:     "gradeK",
+      dateId:      "dateK",
+      updatedId:   "updatedK",
+      factorBarsId:"factorBarsK",
+      tableWrapId: "tableWrapK",
+      scoreLabel:  "K-지수",
+      isMaster:    true,
+    });
+    if (!resultK) throw new Error("빈 데이터");
+  } catch {
+    document.getElementById("loading").textContent = "⚠️ k_fear_greed_result.csv 로드 실패";
+    return;
+  }
+
+  try {
+    const res = await fetch("k_fear_greed_result_k100.csv");
+    if (!res.ok) throw new Error();
+    showK100Gauge();
+    resultK100 = renderUniverse({
+      text:        await res.text(),
+      gaugeId:     "gaugeK100",
+      scoreId:     "scoreK100",
+      gradeId:     "gradeK100",
+      dateId:      "dateK100",
+      updatedId:   "updatedK100",
+      factorBarsId:"factorBarsK100",
+      tableWrapId: "tableK100Wrap",
+      scoreLabel:  "K100-지수",
+      isMaster:    false,
+    });
+  } catch {
+    // K100 없으면 placeholder 유지
+  }
+
+  const rowsK = resultK.rows;
+  const rowsK100 = resultK100 ? resultK100.rows : null;
+
+  // 통합 인자 목록 (양쪽 union, 순서는 K 기준 + K100에만 있는 것 추가)
+  const factorColsK = resultK.factorCols;
+  const factorColsK100 = resultK100 ? resultK100.factorCols : [];
+  const allFactors = [...factorColsK];
+  factorColsK100.forEach(c => { if (!allFactors.includes(c)) allFactors.push(c); });
+
+  // 통합 인자로 양쪽 바 + 테이블 렌더
+  const latestK = rowsK[rowsK.length - 1];
+  renderFactorBars("factorBarsK", latestK, allFactors);
+  renderTable("tableWrapK", rowsK, allFactors, "K-지수");
+
+  if (rowsK100) {
+    const latestK100 = rowsK100[rowsK100.length - 1];
+    renderFactorBars("factorBarsK100", latestK100, allFactors);
+    renderTable("tableK100Wrap", rowsK100, allFactors, "K100-지수");
   } else {
-    table.classList.add("hide-pcr");
+    // K100 CSV 없을 때도 동일 항목 수로 빈 바 표시
+    renderFactorBars("factorBarsK100", null, allFactors);
   }
 
-  drawGauge(score);
-  const scoreEl = document.getElementById("gaugeScore");
-  scoreEl.textContent = score.toFixed(1);
-  scoreEl.style.color = ginfo.hex;
-  document.getElementById("gaugeGrade").textContent = grade;
-  document.getElementById("gaugeDate").textContent =
-    `기준일: ${latest["날짜"].slice(0, 10)}`;
-  const updatedEl = document.getElementById("gaugeUpdated");
-  const updTime = latest["업데이트_시각"];
-  updatedEl.textContent = updTime ? `(업데이트: ${updTime} KST)` : "";
-
-  const cnnScore = parseFloat(latest["CNN_탐욕공포지수"]);
-  const cnnRating = latest["CNN_등급"] || "";
-  if (!isNaN(cnnScore) && cnnRating) {
-    const CNN_KO = {
-      "extreme fear": { ko: "극단적 공포", hex: "#d32f2f" },
-      "fear":         { ko: "공포",        hex: "#f57c00" },
-      "neutral":      { ko: "중립",        hex: "#fbc02d" },
-      "greed":        { ko: "탐욕",        hex: "#388e3c" },
-      "extreme greed":{ ko: "극단적 탐욕", hex: "#1565c0" },
-    };
-    const key = cnnRating.toLowerCase();
-    const info = CNN_KO[key] || { ko: cnnRating, hex: "var(--text)" };
-    document.getElementById("cnnScore").textContent = cnnScore.toFixed(1);
-    const ratingEl = document.getElementById("cnnRating");
-    ratingEl.textContent = `${info.ko} (${cnnRating})`;
-    ratingEl.style.color = info.hex;
-    document.getElementById("cnnCompare").style.display = "flex";
-  }
-
-  renderFactorBars(latest);
-  renderHistoryChart(rows.slice(-60));   // 최근 60일만 표시
-  renderTable(rows);
-
+  renderHistoryChart(rowsK.slice(-60), rowsK100 ? rowsK100.slice(-60) : null);
   document.getElementById("loading").style.display = "none";
 }
 
-// ──────────────────────────────────────────
-// 메인: fetch 시도 → 실패 시 파일 선택 fallback
-// ──────────────────────────────────────────
-const CSV_MAP = {
-  all:  "k_fear_greed_result.csv",
-  k100: "k_fear_greed_result_k100.csv",
-};
-let activeUniverse = "all";
+init();
 
-function switchTab(btn) {
-  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-  btn.classList.add("active");
-  activeUniverse = btn.dataset.universe;
-  document.getElementById("loading").style.display = "flex";
-  document.getElementById("loading-msg").style.display = "";
-  document.getElementById("file-fallback").style.display = "none";
-  loadData();
+// ── PC / 모바일 뷰 토글 ──
+const MOBILE_W = 390;
+
+function redrawAllGauges() {
+  const scoreK = parseFloat(document.getElementById("scoreK")?.textContent);
+  if (!isNaN(scoreK)) drawGauge("gaugeK", scoreK);
+  const scoreK100 = parseFloat(document.getElementById("scoreK100")?.textContent);
+  if (!isNaN(scoreK100)) drawGauge("gaugeK100", scoreK100);
 }
 
-async function loadData() {
-  const csvPath = CSV_MAP[activeUniverse];
-  // 1) fetch 시도 (서버 환경 / GitHub Pages)
-  try {
-    const res = await fetch(csvPath);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    renderAll(text);
-    return;
-  } catch (e) {
-    // file:// 또는 서버 없는 환경 → fallback UI 표시
-    console.warn("fetch 실패, 파일 선택 모드로 전환:", e.message);
+function setView(mode) {
+  document.getElementById("btnPC").classList.toggle("active", mode === "pc");
+  document.getElementById("btnMobile").classList.toggle("active", mode === "mobile");
+  document.body.classList.toggle("mobile-preview", mode === "mobile");
+
+  const main      = document.querySelector(".main");
+  const tableRow  = document.querySelector(".table-row");
+
+  if (mode === "mobile") {
+    main.style.maxWidth   = MOBILE_W + "px";
+    main.style.marginLeft = "0";
+    main.style.marginRight= "0";
+    main.style.padding    = "12px";
+    main.style.gap        = "12px";
+    if (tableRow) tableRow.style.gridTemplateColumns = "1fr";
+  } else {
+    main.style.maxWidth    = "";
+    main.style.marginLeft  = "";
+    main.style.marginRight = "";
+    main.style.padding     = "";
+    main.style.gap         = "";
+    if (tableRow) tableRow.style.gridTemplateColumns = "";
   }
 
-  // 2) fallback: 파일 직접 선택
-  document.getElementById("loading-msg").style.display = "none";
-  document.getElementById("file-fallback").style.display = "flex";
-
-  document.getElementById("file-input").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => renderAll(ev.target.result);
-    reader.readAsText(file, "UTF-8");
-  });
+  if (histChart) histChart.resize();
+  redrawAllGauges();
 }
 
-loadData();
+window.addEventListener("resize", () => { redrawAllGauges(); });
 </script>
 </body>
 </html>
