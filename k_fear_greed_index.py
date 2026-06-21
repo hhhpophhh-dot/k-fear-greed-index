@@ -63,7 +63,7 @@ def _fetch_cnn():
 def _save(result_df: pd.DataFrame, path: str):
     result_df.index.name = "날짜"
     existing = [c for c in ALL_FACTOR_COLS if c in result_df.columns]
-    clean    = result_df.dropna(subset=existing)
+    clean    = result_df.dropna(subset=existing, how="all")
     clean.to_csv(path, encoding="utf-8-sig")
     print(f"결과 저장: {path} ({len(clean)}행)")
 
