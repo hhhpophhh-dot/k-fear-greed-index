@@ -120,6 +120,6 @@ if __name__ == "__main__":
 
     result_df.index.name = "날짜"
     existing = [c for c in display_cols if c in result_df.columns]
-    clean = result_df.dropna(subset=existing, how="all")
+    clean = result_df.dropna(subset=existing)
     clean.to_csv(OUTPUT_PATH_K100, encoding="utf-8-sig")
     print(f"결과 저장: {OUTPUT_PATH_K100} ({len(clean)}행)")
